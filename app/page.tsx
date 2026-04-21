@@ -1,10 +1,22 @@
-import { getSession } from "@/lib/session";
-import { redirect } from "next/navigation";
+"use client";
 
-export default async function Home() {
-  const session = await getSession();
-  if (session.userId) {
-    redirect("/dashboard");
-  }
-  redirect("/login");
+import { useAuth } from "@/components/auth-provider";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+export default function Home() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    if (user) router.replace("/dashboard");
+    else router.replace("/login");
+  }, [user, loading, router]);
+
+  return (
+    <div className="flex flex-1 items-center justify-center text-sm text-muted">
+      Перенаправлення…
+    </div>
+  );
 }

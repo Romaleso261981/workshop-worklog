@@ -1,31 +1,63 @@
 "use client";
 
-import { registerAction, type ActionResult } from "@/app/actions/auth";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
+import { COL } from "@/lib/firestore/collections";
+import { roleFromEmail } from "@/lib/role-from-email";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { PasswordInput } from "@/components/password-input";
 import Link from "next/link";
-import { useActionState } from "react";
-
-async function registerFormAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult | null> {
-  return registerAction(formData);
-}
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 export function RegisterForm() {
-  const [state, formAction, pending] = useActionState(registerFormAction, null);
+  const router = useRouter();
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      try {
+        const auth = getFirebaseAuth();
+        const db = getFirebaseDb();
+        const cred = await createUserWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password,
+        );
+        await updateProfile(cred.user, { displayName: displayName.trim() });
+        const role = roleFromEmail(email.trim());
+        await setDoc(doc(db, COL.users, cred.user.uid), {
+          email: email.trim(),
+          displayName: displayName.trim(),
+          role,
+          createdAt: serverTimestamp(),
+        });
+        router.replace("/dashboard");
+      } catch {
+        setError("Не вдалося зареєструватися (email зайнятий або слабкий пароль).");
+      }
+    });
+  }
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div>
         <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="displayName">
           Ім’я та прізвище
         </label>
         <input
           id="displayName"
-          name="displayName"
-          type="text"
           required
-          autoComplete="name"
+          minLength={2}
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-foreground outline-none ring-accent focus:ring-2"
         />
       </div>
@@ -35,10 +67,10 @@ export function RegisterForm() {
         </label>
         <input
           id="email"
-          name="email"
           type="email"
           required
-          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-foreground outline-none ring-accent focus:ring-2"
         />
       </div>
@@ -46,19 +78,20 @@ export function RegisterForm() {
         <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="password">
           Пароль (мінімум 8 символів)
         </label>
-        <input
+        <PasswordInput
           id="password"
-          name="password"
-          type="password"
           required
           minLength={8}
+          value={password}
+          onChange={setPassword}
           autoComplete="new-password"
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-foreground outline-none ring-accent focus:ring-2"
+          showPassword={showPassword}
+          onToggleVisibility={() => setShowPassword((v) => !v)}
         />
       </div>
-      {state && "error" in state ? (
+      {error ? (
         <p className="text-sm text-red-700" role="alert">
-          {state.error}
+          {error}
         </p>
       ) : null}
       <button
@@ -70,7 +103,7 @@ export function RegisterForm() {
       </button>
       <p className="text-center text-sm text-muted">
         Вже є акаунт?{" "}
-        <Link href="/login" className="font-medium text-accent underline-offset-2 hover:underline">
+        <Link href="/login" className="font-medium text-accent hover:underline">
           Увійти
         </Link>
       </p>

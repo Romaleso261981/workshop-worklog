@@ -1,19 +1,33 @@
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/session";
-import { UserRole } from "@prisma/client";
-import { redirect } from "next/navigation";
+"use client";
 
-export default async function AdminSectionLayout({
+import { useAuth } from "@/components/auth-provider";
+import { canManageOrders } from "@/lib/order-manager-role";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+export default function AdminSectionLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
-  if (!session.userId) redirect("/login");
+  const { user, profile, loading } = useAuth();
+  const router = useRouter();
 
-  const user = await prisma.user.findUnique({ where: { id: session.userId } });
-  if (!user || user.role !== UserRole.ADMIN) {
-    redirect("/dashboard");
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    if (!profile || !canManageOrders(profile.role)) {
+      router.replace("/dashboard");
+    }
+  }, [user, profile, loading, router]);
+
+  if (loading || !user || !profile || !canManageOrders(profile.role)) {
+    return (
+      <div className="py-8 text-center text-sm text-muted">Перевірка доступу…</div>
+    );
   }
 
   return <>{children}</>;

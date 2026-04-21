@@ -1,25 +1,45 @@
 "use client";
 
-import { loginAction, type ActionResult } from "@/app/actions/auth";
+import { PasswordInput } from "@/components/password-input";
+import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
+import { COL } from "@/lib/firestore/collections";
+import { collection, getDocs } from "firebase/firestore";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import Link from "next/link";
-import { useActionState, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-async function loginFormAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult | null> {
-  return loginAction(formData);
-}
-
-type Props = {
-  savedEmails: string[];
-};
-
-export function LoginForm({ savedEmails }: Props) {
-  const [state, formAction, pending] = useActionState(loginFormAction, null);
+export function LoginForm() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedEmails, setSavedEmails] = useState<string[]>([]);
   const [listOpen, setListOpen] = useState(false);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const db = getFirebaseDb();
+        const snap = await getDocs(collection(db, COL.users));
+        if (cancelled) return;
+        const emails = snap.docs
+          .map((d) => (d.data() as { email?: string }).email)
+          .filter((e): e is string => !!e)
+          .sort((a, b) => a.localeCompare(b));
+        setSavedEmails(emails);
+      } catch {
+        /* rules may block until first user exists */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = email.trim().toLowerCase();
@@ -50,13 +70,26 @@ export function LoginForm({ savedEmails }: Props) {
     clearBlurTimer();
   }
 
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      try {
+        const auth = getFirebaseAuth();
+        await signInWithEmailAndPassword(auth, email.trim(), password);
+        router.replace("/dashboard");
+      } catch {
+        setError("Невірний email або пароль.");
+      }
+    });
+  }
+
   return (
-    <form action={formAction} autoComplete="off" className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} autoComplete="off" className="flex flex-col gap-4">
       <div className="relative">
         <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="email">
           Email
         </label>
-        {/* Visible field: text + inputMode=email avoids Chrome/Google login & address autofill over our list */}
         <input
           id="email"
           type="text"
@@ -68,7 +101,6 @@ export function LoginForm({ savedEmails }: Props) {
           aria-autocomplete="none"
           data-lpignore="true"
           data-1p-ignore="true"
-          data-bwignore
           required
           value={email}
           onChange={(e) => {
@@ -79,7 +111,6 @@ export function LoginForm({ savedEmails }: Props) {
           onBlur={scheduleClose}
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-foreground outline-none ring-accent focus:ring-2"
         />
-        <input type="hidden" name="email" value={email} />
         {listOpen && savedEmails.length > 0 ? (
           <ul
             className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-auto rounded-lg border border-border bg-card py-1 shadow-lg"
@@ -87,7 +118,7 @@ export function LoginForm({ savedEmails }: Props) {
             aria-label="Зареєстровані email"
           >
             {filtered.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-muted">Немає збігів — введіть email вручну.</li>
+              <li className="px-3 py-2 text-sm text-muted">Немає збігів.</li>
             ) : (
               filtered.map((e) => (
                 <li key={e}>
@@ -106,30 +137,24 @@ export function LoginForm({ savedEmails }: Props) {
             )}
           </ul>
         ) : null}
-        {savedEmails.length > 0 ? (
-          <p className="mt-1 text-xs text-muted">
-            Натисніть у поле — з’явиться список зареєстрованих адрес; оберіть свою або введіть вручну.
-          </p>
-        ) : (
-          <p className="mt-1 text-xs text-muted">Після першої реєстрації адреси з’являться тут для швидкого вибору.</p>
-        )}
       </div>
       <div>
         <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="password">
           Пароль
         </label>
-        <input
+        <PasswordInput
           id="password"
-          name="password"
-          type="password"
           required
           autoComplete="current-password"
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-foreground outline-none ring-accent focus:ring-2"
+          value={password}
+          onChange={setPassword}
+          showPassword={showPassword}
+          onToggleVisibility={() => setShowPassword((v) => !v)}
         />
       </div>
-      {state && "error" in state ? (
+      {error ? (
         <p className="text-sm text-red-700" role="alert">
-          {state.error}
+          {error}
         </p>
       ) : null}
       <button
@@ -141,7 +166,7 @@ export function LoginForm({ savedEmails }: Props) {
       </button>
       <p className="text-center text-sm text-muted">
         Немає акаунту?{" "}
-        <Link href="/register" className="font-medium text-accent underline-offset-2 hover:underline">
+        <Link href="/register" className="font-medium text-accent hover:underline">
           Зареєструватися
         </Link>
       </p>
