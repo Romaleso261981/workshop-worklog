@@ -98,6 +98,7 @@ export function DashboardLayoutClient({
 
   const navLink =
     "rounded-lg px-3 py-2 text-sm font-medium text-muted transition hover:bg-accent-soft hover:text-foreground";
+  const processNav = canManageOrders(profile.role);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -113,28 +114,31 @@ export function DashboardLayoutClient({
             <Link href="/dashboard" className={navLink}>
               Головна
             </Link>
-            <Link href="/dashboard/shift" className={navLink}>
-              Зміна
-            </Link>
-            <Link href="/dashboard/journal" className={navLink}>
-              Журнал
-            </Link>
-            <Link href="/dashboard/orders" className={navLink}>
-              Замовлення
-            </Link>
-            <Link href="/dashboard/materials" className={navLink}>
-              Матеріали
-            </Link>
-            {canManageOrders(profile.role) ? (
+            {processNav ? (
               <>
                 <Link href="/dashboard/admin/orders" className={`${navLink} text-accent`}>
-                  Керування замовленнями
+                  Замовлення
                 </Link>
                 <Link href="/dashboard/admin/materials" className={`${navLink} text-accent`}>
-                  Довідник матеріалів
+                  Матеріали
                 </Link>
               </>
-            ) : null}
+            ) : (
+              <>
+                <Link href="/dashboard/shift" className={navLink}>
+                  Зміна
+                </Link>
+                <Link href="/dashboard/journal" className={navLink}>
+                  Журнал
+                </Link>
+                <Link href="/dashboard/orders" className={navLink}>
+                  Замовлення
+                </Link>
+                <Link href="/dashboard/materials" className={navLink}>
+                  Матеріали
+                </Link>
+              </>
+            )}
             <button
               type="button"
               onClick={() => signOut().then(() => router.replace("/login"))}
@@ -146,7 +150,7 @@ export function DashboardLayoutClient({
         </div>
       </header>
 
-      {active ? (
+      {!processNav && active ? (
         <div className="border-b border-amber-200 bg-accent-soft">
           <div className="mx-auto flex max-w-4xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm">

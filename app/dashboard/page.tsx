@@ -6,6 +6,38 @@ import Link from "next/link";
 
 export default function DashboardHome() {
   const { profile } = useAuth();
+  const processOnly = profile && canManageOrders(profile.role);
+
+  if (processOnly) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Керування процесом</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+            Обліковий запис лише для адміністрування: створення та закриття замовлень і ведення довідника матеріалів.
+            Облік змін на конвеєрі ведуть працівники у своєму інтерфейсі.
+          </p>
+        </div>
+
+        <div className="grid max-w-xl gap-4 sm:grid-cols-2">
+          <Link
+            href="/dashboard/admin/orders"
+            className="rounded-2xl border border-border bg-card p-6 shadow-sm transition hover:border-accent/40 hover:shadow"
+          >
+            <h2 className="text-lg font-semibold text-foreground">Замовлення</h2>
+            <p className="mt-2 text-sm text-muted">Створення, статуси та закриття замовлень.</p>
+          </Link>
+          <Link
+            href="/dashboard/admin/materials"
+            className="rounded-2xl border border-border bg-card p-6 shadow-sm transition hover:border-accent/40 hover:shadow"
+          >
+            <h2 className="text-lg font-semibold text-foreground">Матеріали</h2>
+            <p className="mt-2 text-sm text-muted">Довідник позицій для цеху.</p>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -15,19 +47,6 @@ export default function DashboardHome() {
           Замовлення та довідник матеріалів ведуться у Firestore. Авторизація — Firebase. Етапи по кожному
           замовленню проходять по черзі на сторінці «Зміна».
         </p>
-        {profile && canManageOrders(profile.role) ? (
-          <p className="mt-3 text-sm text-muted">
-            Керування:{" "}
-            <Link href="/dashboard/admin/orders" className="font-medium text-accent hover:underline">
-              замовлення
-            </Link>
-            ,{" "}
-            <Link href="/dashboard/admin/materials" className="font-medium text-accent hover:underline">
-              матеріали
-            </Link>
-            .
-          </p>
-        ) : null}
       </div>
 
       <Link

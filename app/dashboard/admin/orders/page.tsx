@@ -15,7 +15,6 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type OrderDoc = {
@@ -137,21 +136,16 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="space-y-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Замовлення (керування)</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted">
-            Створення та закриття замовлень у Firestore. Після закриття замовлення зникає зі списку для працівників.
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Замовлення (керування)</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
+          Створення та закриття замовлень у Firestore. Після закриття замовлення зникає зі списку для працівників.
+        </p>
+        {loadError ? (
+          <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
+            {loadError}
           </p>
-          {loadError ? (
-            <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
-              {loadError}
-            </p>
-          ) : null}
-        </div>
-        <Link href="/dashboard/orders" className="text-sm font-medium text-accent hover:underline">
-          Перегляд для цеху →
-        </Link>
+        ) : null}
       </div>
 
       <form

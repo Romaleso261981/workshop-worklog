@@ -5,7 +5,6 @@ import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/fire
 import { COL } from "@/lib/firestore/collections";
 import { MATERIAL_CATEGORIES, materialCategoryLabel } from "@/lib/material-categories";
 import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp } from "firebase/firestore";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type Mat = { id: string; name: string; category: string; notes?: string | null };
@@ -85,21 +84,16 @@ export default function AdminMaterialsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Довідник матеріалів</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted">
-            Реєструйте фарби, гвинти, профіль, труби та інше — список бачать усі працівники на сторінці «Матеріали».
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Довідник матеріалів</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
+          Реєструйте фарби, гвинти, профіль, труби та інше — список бачать працівники у своєму розділі «Матеріали».
+        </p>
+        {loadError ? (
+          <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
+            {loadError}
           </p>
-          {loadError ? (
-            <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
-              {loadError}
-            </p>
-          ) : null}
-        </div>
-        <Link href="/dashboard/materials" className="text-sm font-medium text-accent hover:underline">
-          Перегляд для цеху →
-        </Link>
+        ) : null}
       </div>
 
       <form
