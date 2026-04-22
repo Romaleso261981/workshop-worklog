@@ -5,6 +5,21 @@ const NP_URL = "https://api.novaposhta.ua/v2.0/json/";
 
 export type NpSettlementItem = { ref: string; label: string };
 
+function npApiKeyFromEnv(): string {
+  return (process.env.NOVA_POSHTA_API_KEY ?? "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
+}
+
+function npHintFromErrors(errors: unknown): string | undefined {
+  if (!Array.isArray(errors)) return undefined;
+  for (const e of errors) {
+    if (typeof e === "string" && /api key/i.test(e)) return "invalid_api_key";
+  }
+  return undefined;
+}
+
 function normalizeNpData(data: unknown): NpSettlementItem[] {
   if (data == null) return [];
   let rows: Record<string, unknown>[] = [];
@@ -36,7 +51,7 @@ export async function GET(req: Request) {
   if (searchParams.get("probe") === "1") {
     return NextResponse.json({
       ok: true,
-      settlementsAvailable: Boolean(process.env.NOVA_POSHTA_API_KEY?.trim()),
+      settlementsAvailable: Boolean(npApiKeyFromEnv()),
     });
   }
 
@@ -45,7 +60,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, items: [] as NpSettlementItem[] });
   }
 
-  const apiKey = process.env.NOVA_POSHTA_API_KEY?.trim();
+  const apiKey = npApiKeyFromEnv();
   if (!apiKey) {
     return NextResponse.json({ ok: true, items: [] as NpSettlementItem[], hint: "no_api_key" });
   }
@@ -73,10 +88,12 @@ export async function GET(req: Request) {
     json = await call({ CityName: q, Limit: "25" });
   }
   if (!json.success) {
+    const hint = npHintFromErrors(json.errors);
     return NextResponse.json({
       ok: false,
       items: [] as NpSettlementItem[],
       errors: json.errors,
+      ...(hint ? { hint } : {}),
     });
   }
 

@@ -3,6 +3,13 @@ import { NextResponse } from "next/server";
 /** Єдиний endpoint JSON-RPC Нової Пошти */
 const NP = "https://api.novaposhta.ua/v2.0/json/";
 
+function npApiKeyFromEnv(): string {
+  return (process.env.NOVA_POSHTA_API_KEY ?? "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
+}
+
 export type NpWarehouseItem = { ref: string; label: string; number: string };
 
 function normalizeWarehouses(data: unknown): NpWarehouseItem[] {
@@ -48,7 +55,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, items: [] as NpWarehouseItem[] });
   }
 
-  const apiKey = process.env.NOVA_POSHTA_API_KEY?.trim();
+  const apiKey = npApiKeyFromEnv();
   if (!apiKey) {
     return NextResponse.json({ ok: true, items: [] as NpWarehouseItem[], hint: "no_api_key" });
   }

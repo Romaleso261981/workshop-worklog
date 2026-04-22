@@ -29,6 +29,10 @@ export function OrderNpDeliveryFields({
   const [setItems, setSetItems] = useState<{ ref: string; label: string }[]>([]);
   const [setOpen, setSetOpen] = useState(false);
   const [setLoading, setSetLoading] = useState(false);
+  /** Підказка всередині випадаючого списку (порожній пошук, мережа тощо). */
+  const [setHint, setSetHint] = useState<string | null>(null);
+  /** НП відхилила ключ — показуємо під полем завжди, не лише в списку. */
+  const [npKeyRejected, setNpKeyRejected] = useState(false);
 
   const [whItems, setWhItems] = useState<{ ref: string; label: string }[]>([]);
   const [whLoading, setWhLoading] = useState(false);
@@ -53,6 +57,8 @@ export function OrderNpDeliveryFields({
     setSetLabel(sl);
     setQuery(sl);
     setSetItems([]);
+    setSetHint(null);
+    setNpKeyRejected(false);
     setSetOpen(false);
     setWhRef((initialWarehouseRef ?? "").trim());
     setWhLabel((initialWarehouseLabel ?? "").trim());
@@ -62,15 +68,49 @@ export function OrderNpDeliveryFields({
   const runSettlementSearch = useCallback((text: string) => {
     if (text.trim().length < 2) {
       setSetItems([]);
+      setSetHint(null);
       return;
     }
     setSetLoading(true);
+    setSetHint(null);
     void fetch(`/api/novaposhta/settlements?q=${encodeURIComponent(text.trim())}`)
       .then((r) => r.json())
-      .then((j: { items?: { ref: string; label: string }[] }) => {
-        setSetItems(Array.isArray(j.items) ? j.items : []);
+      .then(
+        (j: {
+          ok?: boolean;
+          hint?: string;
+          items?: { ref: string; label: string }[];
+          errors?: unknown;
+        }) => {
+          if (j && j.ok === false) {
+            setSetItems([]);
+            const keyBad =
+              j.hint === "invalid_api_key" ||
+              (Array.isArray(j.errors) && j.errors.some((e) => typeof e === "string" && /api key/i.test(e)));
+            setNpKeyRejected(Boolean(keyBad));
+            if (keyBad) {
+              setSetHint(
+                "Нова Пошта відхилила API-ключ. Згенеруйте ключ у кабінеті (Інформаційні сервіси / API), вставте в .env.local без лапок, перезапустіть dev-сервер.",
+              );
+            } else {
+              const raw = Array.isArray(j.errors) ? j.errors[0] : j.errors;
+              const msg = typeof raw === "string" ? raw : "Помилка сервісу Нової Пошти.";
+              setSetHint(`Нова Пошта: ${msg}`);
+            }
+            return;
+          }
+          setNpKeyRejected(false);
+          const items = Array.isArray(j.items) ? j.items : [];
+          setSetItems(items);
+          if (items.length === 0) {
+            setSetHint("За цим запитом нічого не знайдено — спробуйте інше написання або повну назву.");
+          }
+        },
+      )
+      .catch(() => {
+        setSetItems([]);
+        setSetHint("Помилка мережі при зверненні до підказок.");
       })
-      .catch(() => setSetItems([]))
       .finally(() => setSetLoading(false));
   }, []);
 
@@ -177,21 +217,27 @@ export function OrderNpDeliveryFields({
             placeholder="Почніть вводити: Ладижин, Київ…"
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
           />
-          {setOpen && (setItems.length > 0 || setLoading) ? (
-            <ul className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-border bg-card py-1 text-sm shadow-lg">
+          {setOpen && query.trim().length >= 2 ? (
+            <ul className="absolute z-100 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-border bg-card py-1 text-sm shadow-lg">
               {setLoading ? (
                 <li className="px-3 py-2 text-muted">Завантаження…</li>
+              ) : setHint ? (
+                <li className="px-3 py-2 text-left text-xs text-amber-950">{setHint}</li>
+              ) : setItems.length === 0 ? (
+                <li className="px-3 py-2 text-xs text-muted">Немає варіантів.</li>
               ) : (
                 setItems.map((it) => (
                   <li key={it.ref}>
                     <button
                       type="button"
                       className="w-full px-3 py-2 text-left hover:bg-accent-soft"
+                      onMouseDown={(ev) => ev.preventDefault()}
                       onClick={() => {
                         setSetRef(it.ref);
                         setSetLabel(it.label);
                         setQuery(it.label);
                         setSetOpen(false);
+                        setSetHint(null);
                         setWhRef("");
                         setWhLabel("");
                       }}
@@ -204,6 +250,13 @@ export function OrderNpDeliveryFields({
             </ul>
           ) : null}
         </div>
+        {npKeyRejected ? (
+          <p className="text-xs text-red-800" role="alert">
+            Ключ у <code className="rounded bg-accent-soft px-1">.env.local</code> є, але Нова Пошта його не приймає.
+            Потрібен саме API-ключ із кабінету (не пароль і не токен з іншого сервісу). Після зміни обов’язково перезапустіть{" "}
+            <code className="rounded bg-accent-soft px-1">npm run dev</code>.
+          </p>
+        ) : null}
         {setLabel ? (
           <p className="text-xs text-muted">
             Обрано: <span className="text-foreground">{setLabel}</span>
