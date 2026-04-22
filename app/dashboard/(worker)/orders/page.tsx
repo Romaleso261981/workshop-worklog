@@ -6,6 +6,7 @@ import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/fire
 import { COL } from "@/lib/firestore/collections";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { formatDateTime } from "@/lib/format";
+import { formatPurchaseMoney, parseMoneyAmountInput } from "@/lib/material-categories";
 import { collection, getDocs } from "firebase/firestore";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -18,6 +19,13 @@ type OrderRow = {
   details?: string | null;
   status: string;
   completedAt?: unknown;
+  orderFor?: string | null;
+  orderSubject?: string | null;
+  totalCost?: number | null;
+  totalCurrency?: string | null;
+  npSettlementLabel?: string | null;
+  npWarehouseLabel?: string | null;
+  addressNote?: string | null;
 };
 
 export default function OrdersCatalogPage() {
@@ -42,24 +50,44 @@ export default function OrdersCatalogPage() {
       setManagerCount(managers);
 
       const all: OrderRow[] = ordSnap.docs.map((d) => {
-      const x = d.data() as {
-        number?: string;
-        title?: string | null;
-        description?: string;
-        details?: string | null;
-        status?: string;
-        completedAt?: unknown;
-      };
-      return {
-        id: d.id,
-        number: x.number ?? "",
-        title: x.title ?? null,
-        description: x.description ?? "",
-        details: x.details ?? null,
-        status: x.status ?? ORDER_IN_PRODUCTION,
-        completedAt: x.completedAt,
-      };
-    });
+        const x = d.data() as {
+          number?: string;
+          title?: string | null;
+          description?: string;
+          details?: string | null;
+          status?: string;
+          completedAt?: unknown;
+          orderFor?: string | null;
+          orderSubject?: string | null;
+          totalCost?: unknown;
+          totalCurrency?: string | null;
+          npSettlementLabel?: string | null;
+          npWarehouseLabel?: string | null;
+          addressNote?: string | null;
+        };
+        const tc =
+          typeof x.totalCost === "number" && Number.isFinite(x.totalCost)
+            ? x.totalCost
+            : typeof x.totalCost === "string"
+              ? parseMoneyAmountInput(x.totalCost)
+              : null;
+        return {
+          id: d.id,
+          number: x.number ?? "",
+          title: x.title ?? null,
+          description: x.description ?? "",
+          details: x.details ?? null,
+          status: x.status ?? ORDER_IN_PRODUCTION,
+          completedAt: x.completedAt,
+          orderFor: x.orderFor ?? null,
+          orderSubject: x.orderSubject ?? null,
+          totalCost: tc,
+          totalCurrency: x.totalCurrency ?? null,
+          npSettlementLabel: x.npSettlementLabel ?? null,
+          npWarehouseLabel: x.npWarehouseLabel ?? null,
+          addressNote: x.addressNote ?? null,
+        };
+      });
     setActive(
       all
         .filter((o) => o.status === ORDER_IN_PRODUCTION)
@@ -139,6 +167,39 @@ export default function OrdersCatalogPage() {
                   <span className="tabular-nums">{o.number}</span>
                   {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
                 </p>
+                {o.orderFor ? (
+                  <p className="mt-1 text-xs text-muted">
+                    Для кого: <span className="text-foreground">{o.orderFor}</span>
+                  </p>
+                ) : null}
+                {o.orderSubject ? (
+                  <p className="mt-0.5 text-xs text-muted">
+                    Що виготовляємо: <span className="text-foreground">{o.orderSubject}</span>
+                  </p>
+                ) : null}
+                {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH") ? (
+                  <p className="mt-0.5 text-xs text-muted">
+                    Вартість:{" "}
+                    <span className="text-foreground">
+                      {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH")}
+                    </span>
+                  </p>
+                ) : null}
+                {o.npSettlementLabel ? (
+                  <p className="mt-0.5 text-xs text-muted">
+                    Населений пункт: <span className="text-foreground">{o.npSettlementLabel}</span>
+                  </p>
+                ) : null}
+                {o.npWarehouseLabel ? (
+                  <p className="mt-0.5 text-xs text-muted">
+                    Відділення НП: <span className="text-foreground">{o.npWarehouseLabel}</span>
+                  </p>
+                ) : null}
+                {o.addressNote ? (
+                  <p className="mt-0.5 text-xs text-muted">
+                    Доставка: <span className="text-foreground">{o.addressNote}</span>
+                  </p>
+                ) : null}
                 <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{o.description}</p>
                 {o.details ? (
                   <p className="mt-2 whitespace-pre-wrap text-sm text-muted">

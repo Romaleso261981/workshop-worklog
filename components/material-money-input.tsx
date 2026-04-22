@@ -15,6 +15,11 @@ type Props = {
   resetKey?: string | number;
   initialAmount?: number | null;
   initialCurrency?: string | null;
+  /** Імена полів у FormData (за замовчуванням — для матеріалів) */
+  amountFieldName?: string;
+  currencyFieldName?: string;
+  /** Підпис над полем суми */
+  label?: string;
 };
 
 export function MaterialMoneyInput({
@@ -22,6 +27,9 @@ export function MaterialMoneyInput({
   resetKey = 0,
   initialAmount = null,
   initialCurrency = null,
+  amountFieldName = "purchasePrice",
+  currencyFieldName = "purchaseCurrency",
+  label = "Сума закупівлі",
 }: Props) {
   const [currency, setCurrency] = useState<PurchaseCurrencyId>("UAH");
   const [amount, setAmount] = useState<number | null>(null);
@@ -51,12 +59,12 @@ export function MaterialMoneyInput({
     <div className="space-y-1">
       <input
         type="hidden"
-        name="purchasePrice"
+        name={amountFieldName}
         value={amount != null && Number.isFinite(amount) ? String(amount) : ""}
       />
-      <input type="hidden" name="purchaseCurrency" value={currency} />
+      <input type="hidden" name={currencyFieldName} value={currency} />
       <label className="mb-1 block text-sm font-medium" htmlFor={`${idPrefix}-amount`}>
-        Сума закупівлі
+        {label}
       </label>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <select
