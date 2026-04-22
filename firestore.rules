@@ -26,6 +26,28 @@ service cloud.firestore {
       allow create, update, delete: if isManager();
     }
 
+    match /orders/{orderId}/issuedMaterials/{issueId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'IN_PRODUCTION'
+        && request.resource.data.materialId is string
+        && request.resource.data.materialId.size() > 0
+        && request.resource.data.materialId.size() <= 200
+        && request.resource.data.materialName is string
+        && request.resource.data.materialName.size() > 0
+        && request.resource.data.materialName.size() <= 500
+        && request.resource.data.materialCategory is string
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity > 0
+        && request.resource.data.quantity < 1000000
+        && request.resource.data.addedByUid == request.auth.uid
+        && (request.resource.data.addedByEmail == null
+            || (request.resource.data.addedByEmail is string && request.resource.data.addedByEmail.size() <= 320))
+        && request.resource.data.keys().hasAll(['materialId', 'materialName', 'materialCategory', 'quantity', 'addedByUid', 'createdAt'])
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if isManager();
+    }
+
     match /workEntries/{id} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;

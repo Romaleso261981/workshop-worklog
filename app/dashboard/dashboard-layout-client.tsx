@@ -23,6 +23,7 @@ type ActiveEntry = {
   id: string;
   phase: string;
   orderNumber: string;
+  orderId: string | null;
   startedAt: unknown;
 };
 
@@ -79,6 +80,7 @@ export function DashboardLayoutClient({
           id: d.id,
           phase: data.phase,
           orderNumber,
+          orderId: data.orderId ?? null,
           startedAt: data.startedAt,
         });
       },
@@ -158,6 +160,16 @@ export function DashboardLayoutClient({
                 Активна зміна: {stageLabel(active.phase)} · замовлення{" "}
                 <span className="tabular-nums">{active.orderNumber}</span>
               </p>
+              {active.orderId ? (
+                <p className="mt-1">
+                  <Link
+                    href={`/dashboard/orders/${active.orderId}`}
+                    className="font-medium text-accent underline-offset-2 hover:underline"
+                  >
+                    Картка замовлення та матеріали →
+                  </Link>
+                </p>
+              ) : null}
               <p className="text-muted">
                 Почато:{" "}
                 {active.startedAt &&

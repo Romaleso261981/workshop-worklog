@@ -3,6 +3,7 @@
 import { startStageFirestore } from "@/lib/firestore/shift-ops";
 import type { WorkActionResult } from "@/lib/work-constants";
 import type { OrderSelectOption } from "@/lib/order-option";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
@@ -114,6 +115,14 @@ export function ShiftWorkForm({
             </option>
           ))}
         </select>
+        <p className="mt-2 text-sm">
+          <Link
+            href={`/dashboard/orders/${orderId}`}
+            className="font-medium text-accent underline-offset-2 hover:underline"
+          >
+            Деталі замовлення та облік матеріалів →
+          </Link>
+        </p>
       </div>
 
       {selected ? (

@@ -163,6 +163,14 @@ export default function OrdersCatalogPage() {
                 key={o.id}
                 className="rounded-xl border border-border bg-card p-4 shadow-sm"
               >
+                <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+                  <Link
+                    href={`/dashboard/orders/${o.id}`}
+                    className="text-sm font-medium text-accent underline-offset-2 hover:underline"
+                  >
+                    Картка замовлення та матеріали →
+                  </Link>
+                </div>
                 <p className="font-semibold text-foreground">
                   <span className="tabular-nums">{o.number}</span>
                   {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
@@ -232,6 +240,14 @@ export default function OrdersCatalogPage() {
                   key={o.id}
                   className="rounded-lg border border-border bg-card/80 px-4 py-3 text-sm"
                 >
+                  <div className="mb-1 flex justify-end">
+                    <Link
+                      href={`/dashboard/orders/${o.id}`}
+                      className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+                    >
+                      Картка →
+                    </Link>
+                  </div>
                   <span className="font-medium text-foreground tabular-nums">{o.number}</span>
                   {o.title ? <span className="text-muted"> — {o.title}</span> : null}
                   {closed ? <span className="ml-2 text-muted">· {closed}</span> : null}
