@@ -4,15 +4,18 @@ import { useAuth } from "@/components/auth-provider";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { COL } from "@/lib/firestore/collections";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
-import { materialCategoryLabel } from "@/lib/material-categories";
+import {
+  materialCategoryLabel,
+  materialDetailSubtexts,
+  parseMaterialDoc,
+  type MaterialListItem,
+} from "@/lib/material-categories";
 import { collection, getDocs } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 
-type Mat = { id: string; name: string; category: string; notes?: string | null };
-
 export default function MaterialsCatalogPage() {
   const { user } = useAuth();
-  const [rows, setRows] = useState<Mat[]>([]);
+  const [rows, setRows] = useState<MaterialListItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -20,15 +23,9 @@ export default function MaterialsCatalogPage() {
     try {
       const db = getFirebaseDb();
       const snap = await getDocs(collection(db, COL.materials));
-      const list: Mat[] = snap.docs.map((d) => {
-        const x = d.data() as { name?: string; category?: string; notes?: string | null };
-        return {
-          id: d.id,
-          name: x.name ?? "",
-          category: x.category ?? "other",
-          notes: x.notes ?? null,
-        };
-      });
+      const list: MaterialListItem[] = snap.docs.map((d) =>
+        parseMaterialDoc(d.id, d.data() as Record<string, unknown>),
+      );
       list.sort((a, b) => a.name.localeCompare(b.name, "uk"));
       setRows(list);
     } catch (e) {
@@ -55,8 +52,8 @@ export default function MaterialsCatalogPage() {
           </p>
         ) : null}
         <p className="mt-2 text-sm text-muted">
-          Довідник матеріалів цеху (фарби, кріплення, профіль, труби тощо). Редагування — у розділі керування для
-          адміністратора та власника виробництва.
+          Довідник цеху (фарби, ґрунти, розчинники, профіль, труби, кріплення). Редагування — у довіднику матеріалів для
+          адміністратора та власника.
         </p>
       </div>
       {rows.length === 0 ? (
@@ -69,6 +66,11 @@ export default function MaterialsCatalogPage() {
             <li key={m.id} className="px-4 py-3 text-sm">
               <p className="font-medium text-foreground">{m.name}</p>
               <p className="text-xs text-muted">{materialCategoryLabel(m.category)}</p>
+              {materialDetailSubtexts(m).map((line, i) => (
+                <p key={i} className="mt-1 text-xs text-muted">
+                  {line}
+                </p>
+              ))}
               {m.notes ? <p className="mt-1 text-muted">{m.notes}</p> : null}
             </li>
           ))}

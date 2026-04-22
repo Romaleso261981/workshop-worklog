@@ -3,32 +3,49 @@
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
-import { MATERIAL_CATEGORIES, materialCategoryLabel } from "@/lib/material-categories";
+import {
+  MATERIAL_CATEGORIES,
+  isPaintLikeCategory,
+  isProfileLikeCategory,
+  materialCategoryLabel,
+  materialDetailSubtexts,
+  materialSearchBlob,
+  parseMaterialDoc,
+  parsePurchasePriceInput,
+  type MaterialListItem,
+} from "@/lib/material-categories";
 import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp } from "firebase/firestore";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-type Mat = { id: string; name: string; category: string; notes?: string | null };
+function matchesMaterialSearch(m: MaterialListItem, raw: string): boolean {
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) return true;
+  const haystack = materialSearchBlob(m);
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  return tokens.every((t) => haystack.includes(t));
+}
 
 export default function AdminMaterialsPage() {
-  const [rows, setRows] = useState<Mat[]>([]);
+  const [rows, setRows] = useState<MaterialListItem[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [formCategory, setFormCategory] = useState<string>(MATERIAL_CATEGORIES[0].id);
+
+  useEffect(() => {
+    if (addOpen) setFormCategory(MATERIAL_CATEGORIES[0].id);
+  }, [addOpen]);
 
   const load = useCallback(async () => {
     setLoadError(null);
     try {
       const db = getFirebaseDb();
       const snap = await getDocs(collection(db, COL.materials));
-      const list: Mat[] = snap.docs.map((d) => {
-        const x = d.data() as { name?: string; category?: string; notes?: string | null };
-        return {
-          id: d.id,
-          name: x.name ?? "",
-          category: x.category ?? "other",
-          notes: x.notes ?? null,
-        };
-      });
+      const list: MaterialListItem[] = snap.docs.map((d) =>
+        parseMaterialDoc(d.id, d.data() as Record<string, unknown>),
+      );
       list.sort((a, b) => a.name.localeCompare(b.name, "uk"));
       setRows(list);
     } catch (e) {
@@ -41,15 +58,29 @@ export default function AdminMaterialsPage() {
     void load();
   }, [load]);
 
+  const filtered = useMemo(
+    () => rows.filter((m) => matchesMaterialSearch(m, search)),
+    [rows, search],
+  );
+
+  const paintLike = isPaintLikeCategory(formCategory);
+  const profileLike = isProfileLikeCategory(formCategory);
+
   function addMaterial(fd: FormData) {
     setError(null);
     const name = String(fd.get("name") ?? "").trim();
-    const category = String(fd.get("category") ?? "other");
     const notes = String(fd.get("notes") ?? "").trim();
+    const category = formCategory;
     if (!name) {
       setError("Вкажіть назву матеріалу.");
       return;
     }
+    const manufacturer = String(fd.get("manufacturer") ?? "").trim();
+    const productCode = String(fd.get("productCode") ?? "").trim();
+    const dimensions = String(fd.get("dimensions") ?? "").trim();
+    const wallThickness = String(fd.get("wallThickness") ?? "").trim();
+    const purchasePrice = parsePurchasePriceInput(String(fd.get("purchasePrice") ?? ""));
+
     void (async () => {
       setPending(true);
       try {
@@ -58,9 +89,16 @@ export default function AdminMaterialsPage() {
           name,
           category,
           notes: notes || null,
+          manufacturer: paintLike ? (manufacturer || null) : null,
+          productCode: profileLike ? (productCode || null) : null,
+          dimensions: profileLike ? (dimensions || null) : null,
+          wallThickness: profileLike ? (wallThickness || null) : null,
+          purchasePrice:
+            paintLike || profileLike ? (purchasePrice ?? null) : null,
           createdAt: serverTimestamp(),
         });
         await load();
+        setAddOpen(false);
       } catch {
         setError("Не вдалося зберегти.");
       } finally {
@@ -83,11 +121,12 @@ export default function AdminMaterialsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Довідник матеріалів</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          Реєструйте фарби, гвинти, профіль, труби та інше — список бачать працівники у своєму розділі «Матеріали».
+          Категорії: фарба, ґрунт, розчинник, профіль, труба тощо. Для фарби вказуйте виробника та ціну закупівлі; для
+          профілю чи труби — номер, розміри, товщину стінки та закупівлю. Шукайте за будь-якими з цих полів.
         </p>
         {loadError ? (
           <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -96,83 +135,212 @@ export default function AdminMaterialsPage() {
         ) : null}
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          addMaterial(new FormData(e.currentTarget));
-        }}
-        className="max-w-xl space-y-3 rounded-2xl border border-border bg-card p-6 shadow-sm"
-      >
-        <h2 className="text-lg font-semibold text-foreground">Додати позицію</h2>
-        <div>
-          <label className="mb-1 block text-sm font-medium" htmlFor="name">
-            Назва *
-          </label>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label className="block max-w-md flex-1 text-sm">
+          <span className="mb-1 block font-medium text-foreground">Пошук</span>
           <input
-            id="name"
-            name="name"
-            required
-            className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-            placeholder="Напр. RAL 8017 мат"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Ключові слова…"
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+            autoComplete="off"
           />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium" htmlFor="category">
-            Категорія
-          </label>
-          <select
-            id="category"
-            name="category"
-            className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-          >
-            {MATERIAL_CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium" htmlFor="notes">
-            Примітки
-          </label>
-          <textarea
-            id="notes"
-            name="notes"
-            rows={2}
-            className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-          />
-        </div>
-        {error ? <p className="text-sm text-red-700">{error}</p> : null}
+        </label>
         <button
-          type="submit"
-          disabled={pending}
-          className="rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-60"
+          type="button"
+          onClick={() => {
+            setAddOpen((v) => !v);
+            setError(null);
+          }}
+          className="shrink-0 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90"
         >
-          Зберегти
+          {addOpen ? "Закрити" : "Додати матеріал"}
         </button>
-      </form>
+      </div>
+
+      {addOpen ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            addMaterial(new FormData(e.currentTarget));
+          }}
+          className="max-w-xl space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm"
+        >
+          <h2 className="text-lg font-semibold text-foreground">Нова позиція</h2>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="category">
+              Категорія
+            </label>
+            <select
+              id="category"
+              name="category"
+              value={formCategory}
+              onChange={(e) => setFormCategory(e.target.value)}
+              className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
+            >
+              {MATERIAL_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="name">
+              Назва *
+            </label>
+            <input
+              id="name"
+              name="name"
+              required
+              className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
+              placeholder="Напр. RAL 8017 мат"
+            />
+          </div>
+
+          {paintLike ? (
+            <div className="space-y-3 rounded-xl border border-border bg-accent-soft/30 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Фарба / ґрунт / розчинник</p>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="manufacturer">
+                  Виробник
+                </label>
+                <input
+                  id="manufacturer"
+                  name="manufacturer"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="Напр. Tikkurila, Dufa"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-paint">
+                  Ціна закупівлі (грн)
+                </label>
+                <input
+                  id="purchasePrice-paint"
+                  name="purchasePrice"
+                  inputMode="decimal"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="0 або 1250,50"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {profileLike ? (
+            <div className="space-y-3 rounded-xl border border-border bg-accent-soft/30 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Профіль або труба</p>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="productCode">
+                  Номер / артикул
+                </label>
+                <input
+                  id="productCode"
+                  name="productCode"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="Внутрішній номер позиції"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="dimensions">
+                  Розміри
+                </label>
+                <input
+                  id="dimensions"
+                  name="dimensions"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="Напр. 20×30 мм"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="wallThickness">
+                  Товщина стінки
+                </label>
+                <input
+                  id="wallThickness"
+                  name="wallThickness"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="Напр. 1,5 мм"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-profile">
+                  Ціна закупівлі (грн)
+                </label>
+                <input
+                  id="purchasePrice-profile"
+                  name="purchasePrice"
+                  inputMode="decimal"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="0 або 320"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="notes">
+              Примітки
+            </label>
+            <textarea
+              id="notes"
+              name="notes"
+              rows={2}
+              className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
+            />
+          </div>
+          {error ? <p className="text-sm text-red-700">{error}</p> : null}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={pending}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              Зберегти
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                setAddOpen(false);
+                setError(null);
+              }}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted transition hover:bg-accent-soft hover:text-foreground disabled:opacity-60"
+            >
+              Скасувати
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Усі позиції ({rows.length})</h2>
+        <h2 className="sr-only">Список матеріалів</h2>
         {rows.length === 0 ? (
           <p className="text-sm text-muted">Поки порожньо.</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-muted">Нічого не знайдено за цим запитом.</p>
         ) : (
-          <ul className="space-y-2">
-            {rows.map((m) => (
-              <li
-                key={m.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm"
-              >
-                <div>
+          <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+            {filtered.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm">
+                <div className="min-w-0 flex-1">
                   <p className="font-medium text-foreground">{m.name}</p>
                   <p className="text-xs text-muted">{materialCategoryLabel(m.category)}</p>
+                  {materialDetailSubtexts(m).map((line, i) => (
+                    <p key={i} className="mt-1 text-xs text-muted">
+                      {line}
+                    </p>
+                  ))}
+                  {m.notes ? <p className="mt-1 text-xs text-muted">{m.notes}</p> : null}
                 </div>
                 <button
                   type="button"
                   disabled={pending}
                   onClick={() => remove(m.id)}
-                  className="text-sm text-red-700 hover:underline disabled:opacity-50"
+                  className="shrink-0 text-sm text-red-700 hover:underline disabled:opacity-50"
                 >
                   Видалити
                 </button>
@@ -180,6 +348,11 @@ export default function AdminMaterialsPage() {
             ))}
           </ul>
         )}
+        {rows.length > 0 ? (
+          <p className="mt-2 text-xs text-muted">
+            Показано {filtered.length} з {rows.length}
+          </p>
+        ) : null}
       </section>
     </div>
   );
