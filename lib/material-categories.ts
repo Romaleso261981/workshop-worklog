@@ -2,13 +2,20 @@ export const MATERIAL_CATEGORIES = [
   { id: "paint", label: "Фарба" },
   { id: "primer", label: "Ґрунт" },
   { id: "solvent", label: "Розчинник" },
-  { id: "profile", label: "Prof. Nostel" },
+  { id: "profile", label: "Профнастил" },
   { id: "pipe", label: "Труба" },
   { id: "fastener", label: "Кріплення" },
   { id: "other", label: "Інше" },
 ] as const;
 
 export type MaterialCategoryId = (typeof MATERIAL_CATEGORIES)[number]["id"];
+
+export const PURCHASE_CURRENCIES = [
+  { id: "UAH", label: "Гривня (UAH)" },
+  { id: "USD", label: "Долар (USD)" },
+] as const;
+
+export type PurchaseCurrencyId = (typeof PURCHASE_CURRENCIES)[number]["id"];
 
 const LEGACY_LABELS: Record<string, string> = {
   metal: "Профіль / метал",
@@ -24,8 +31,8 @@ export function isPaintLikeCategory(id: string): boolean {
   return id === "paint" || id === "primer" || id === "solvent";
 }
 
-/** Категорія «Prof. Nostel» (профнастил тощо) — висота, товщина, глянець/мат */
-export function isProfNostelCategory(id: string): boolean {
+/** Категорія «Профнастил» — висота, товщина, глянець/мат */
+export function isProfnastylCategory(id: string): boolean {
   return id === "profile";
 }
 
@@ -34,17 +41,81 @@ export function isPipeCategory(id: string): boolean {
   return id === "pipe";
 }
 
-/** Рядок з поля форми → число або null, якщо порожньо / невалідно */
-export function parsePurchasePriceInput(raw: string): number | null {
-  const s = String(raw).trim().replace(/\s/g, "").replace(",", ".");
+/**
+ * Парсинг суми з поля: пробіли / непер. пробіл, «грн», «$», USD; кома або крапка як десятковий роздільник.
+ */
+export function parseMoneyAmountInput(raw: string): number | null {
+  let s = String(raw).trim();
   if (!s) return null;
+  s = s.replace(/\u00A0/g, "").replace(/\u202F/g, "");
+  s = s.replace(/грн\.?/gi, "").replace(/₴/g, "").replace(/USD/gi, "").replace(/\$/g, "").trim();
+  s = s.replace(/\s/g, "");
+  if (!s) return null;
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (lastComma >= 0) {
+    const parts = s.split(",");
+    if (parts.length === 2 && /^\d+$/.test(parts[1]) && parts[1].length <= 2) {
+      s = parts[0].replace(/\./g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (lastDot >= 0) {
+    const parts = s.split(".");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = parts[0].replace(/,/g, "") + "." + parts[1];
+    } else {
+      s = s.replace(/\./g, "");
+    }
+  }
+
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
 
-export function formatPurchasePriceUa(value: number | null | undefined): string | null {
+/** @deprecated використовуйте parseMoneyAmountInput */
+export function parsePurchasePriceInput(raw: string): number | null {
+  return parseMoneyAmountInput(raw);
+}
+
+/** Групування цифр для показу в полі (без символа валюти) */
+export function formatAmountGrouped(value: number, currency: PurchaseCurrencyId): string {
+  const locale = currency === "USD" ? "en-US" : "uk-UA";
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+export function coercePurchaseCurrency(value: unknown): PurchaseCurrencyId {
+  if (value === "USD") return "USD";
+  return "UAH";
+}
+
+/** Відображення суми з символом валюти (списки, деталі) */
+export function formatPurchaseMoney(
+  value: number | null | undefined,
+  currency: string | null | undefined,
+): string | null {
   if (value == null || !Number.isFinite(value)) return null;
-  return `${new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 2 }).format(value)} грн`;
+  const c = currency === "USD" ? "USD" : "UAH";
+  return new Intl.NumberFormat("uk-UA", {
+    style: "currency",
+    currency: c,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+/** @deprecated використовуйте formatPurchaseMoney(value, 'UAH') */
+export function formatPurchasePriceUa(value: number | null | undefined): string | null {
+  return formatPurchaseMoney(value, "UAH");
 }
 
 /** Значення з `<input type="date">` або порожній рядок → YYYY-MM-DD або null */
@@ -88,24 +159,27 @@ export type MaterialFirestoreFields = {
   notes?: string | null;
   manufacturer?: string | null;
   purchasePrice?: number | null;
+  purchaseCurrency?: PurchaseCurrencyId | string | null;
   /** Дата закупівлі, лише дата у форматі YYYY-MM-DD */
   purchaseDate?: string | null;
   productCode?: string | null;
   dimensions?: string | null;
   wallThickness?: string | null;
-  /** Prof. Nostel — висота (напр. хвилі, мм) */
+  /** Профнастил — висота (напр. хвилі, мм) */
   sheetHeight?: string | null;
-  /** Prof. Nostel — товщина металу */
+  /** Профнастил — товщина металу */
   sheetThickness?: string | null;
-  /** Prof. Nostel — глянець або мат */
+  /** Профнастил — глянець або мат */
   surfaceFinish?: string | null;
+  /** Профнастил — колір покриття */
+  sheetColor?: string | null;
 };
 
 export type MaterialListItem = { id: string } & MaterialFirestoreFields;
 
 function coercePurchasePrice(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") return parsePurchasePriceInput(value);
+  if (typeof value === "string") return parseMoneyAmountInput(value);
   return null;
 }
 
@@ -135,6 +209,7 @@ export function parseMaterialDoc(id: string, data: Record<string, unknown>): Mat
     notes: (data.notes as string | null | undefined) ?? null,
     manufacturer: (data.manufacturer as string | null | undefined) ?? null,
     purchasePrice: coercePurchasePrice(data.purchasePrice),
+    purchaseCurrency: coercePurchaseCurrency(data.purchaseCurrency),
     purchaseDate: coercePurchaseDate(data.purchaseDate),
     productCode: (data.productCode as string | null | undefined) ?? null,
     dimensions: (data.dimensions as string | null | undefined) ?? null,
@@ -142,13 +217,14 @@ export function parseMaterialDoc(id: string, data: Record<string, unknown>): Mat
     sheetHeight: (data.sheetHeight as string | null | undefined) ?? null,
     sheetThickness: (data.sheetThickness as string | null | undefined) ?? null,
     surfaceFinish: coerceSurfaceFinish(data.surfaceFinish),
+    sheetColor: (data.sheetColor as string | null | undefined) ?? null,
   };
 }
 
 /** Другий рядок(и) у списку — характеристики залежно від категорії */
 export function materialDetailSubtexts(m: MaterialListItem): string[] {
   const lines: string[] = [];
-  const price = formatPurchasePriceUa(m.purchasePrice ?? undefined);
+  const price = formatPurchaseMoney(m.purchasePrice ?? undefined, m.purchaseCurrency ?? "UAH");
   const dateLabel = formatPurchaseDateUa(m.purchaseDate ?? undefined);
 
   if (isPaintLikeCategory(m.category)) {
@@ -157,17 +233,19 @@ export function materialDetailSubtexts(m: MaterialListItem): string[] {
     if (dateLabel) bits.push(`Дата закупівлі: ${dateLabel}`);
     if (price) bits.push(`Закупівля: ${price}`);
     if (bits.length) lines.push(bits.join(" · "));
-  } else if (isProfNostelCategory(m.category)) {
+  } else if (isProfnastylCategory(m.category)) {
     const bits: string[] = [];
-    const hasNostel =
+    const hasProfnastylFields =
       (m.sheetHeight && m.sheetHeight.trim()) ||
       (m.sheetThickness && m.sheetThickness.trim()) ||
+      (m.sheetColor && m.sheetColor.trim()) ||
       surfaceFinishLabel(m.surfaceFinish);
-    if (hasNostel) {
+    if (hasProfnastylFields) {
       if (m.sheetHeight?.trim()) bits.push(`Висота: ${m.sheetHeight.trim()}`);
       if (m.sheetThickness?.trim()) bits.push(`Товщина: ${m.sheetThickness.trim()}`);
       const sf = surfaceFinishLabel(m.surfaceFinish);
       if (sf) bits.push(`Поверхня: ${sf}`);
+      if (m.sheetColor?.trim()) bits.push(`Колір: ${m.sheetColor.trim()}`);
     } else {
       if (m.productCode) bits.push(`№ / артикул: ${m.productCode}`);
       if (m.dimensions) bits.push(`Розміри: ${m.dimensions}`);
@@ -195,6 +273,7 @@ export function materialDetailSubtexts(m: MaterialListItem): string[] {
 
 export function materialSearchBlob(m: MaterialListItem): string {
   const sf = surfaceFinishLabel(m.surfaceFinish);
+  const money = formatPurchaseMoney(m.purchasePrice ?? undefined, m.purchaseCurrency ?? "UAH");
   return [
     m.name,
     materialCategoryLabel(m.category),
@@ -202,8 +281,11 @@ export function materialSearchBlob(m: MaterialListItem): string {
     m.purchaseDate ?? "",
     m.sheetHeight ?? "",
     m.sheetThickness ?? "",
+    m.sheetColor ?? "",
     sf ?? "",
     m.surfaceFinish ?? "",
+    m.purchaseCurrency ?? "",
+    money ?? "",
     ...materialDetailSubtexts(m),
   ]
     .join(" ")

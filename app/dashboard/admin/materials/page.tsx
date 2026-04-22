@@ -3,22 +3,32 @@
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
+import { MaterialMoneyInput } from "@/components/material-money-input";
 import {
   MATERIAL_CATEGORIES,
   SURFACE_FINISH_OPTIONS,
+  coercePurchaseCurrency,
   isPaintLikeCategory,
   isPipeCategory,
-  isProfNostelCategory,
+  isProfnastylCategory,
   materialCategoryLabel,
   materialDetailSubtexts,
   materialSearchBlob,
   parseMaterialDoc,
+  parseMoneyAmountInput,
   parsePurchaseDateInput,
-  parsePurchasePriceInput,
   type MaterialListItem,
 } from "@/lib/material-categories";
-import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 
 function matchesMaterialSearch(m: MaterialListItem, raw: string): boolean {
   const trimmed = raw.trim().toLowerCase();
@@ -28,18 +38,69 @@ function matchesMaterialSearch(m: MaterialListItem, raw: string): boolean {
   return tokens.every((t) => haystack.includes(t));
 }
 
+function materialPayloadFromForm(fd: FormData, category: string) {
+  const name = String(fd.get("name") ?? "").trim();
+  const notes = String(fd.get("notes") ?? "").trim();
+  const manufacturer = String(fd.get("manufacturer") ?? "").trim();
+  const productCode = String(fd.get("productCode") ?? "").trim();
+  const dimensions = String(fd.get("dimensions") ?? "").trim();
+  const wallThickness = String(fd.get("wallThickness") ?? "").trim();
+  const sheetHeight = String(fd.get("sheetHeight") ?? "").trim();
+  const sheetThickness = String(fd.get("sheetThickness") ?? "").trim();
+  const surfaceRaw = String(fd.get("surfaceFinish") ?? "");
+  const surfaceFinish =
+    surfaceRaw === "glossy" || surfaceRaw === "matte" ? surfaceRaw : null;
+  const sheetColor = String(fd.get("sheetColor") ?? "").trim();
+  const purchasePrice = parseMoneyAmountInput(String(fd.get("purchasePrice") ?? ""));
+  const purchaseCurrency = coercePurchaseCurrency(fd.get("purchaseCurrency"));
+  const purchaseDate = parsePurchaseDateInput(String(fd.get("purchaseDate") ?? ""));
+
+  const isPaint = isPaintLikeCategory(category);
+  const isProf = isProfnastylCategory(category);
+  const isPipe = isPipeCategory(category);
+
+  return {
+    name,
+    category,
+    notes: notes || null,
+    manufacturer: isPaint ? (manufacturer || null) : null,
+    productCode: isPipe ? (productCode || null) : null,
+    dimensions: isPipe ? (dimensions || null) : null,
+    wallThickness: isPipe ? (wallThickness || null) : null,
+    sheetHeight: isProf ? (sheetHeight || null) : null,
+    sheetThickness: isProf ? (sheetThickness || null) : null,
+    surfaceFinish: isProf ? surfaceFinish : null,
+    sheetColor: isProf ? (sheetColor || null) : null,
+    purchasePrice: isPaint || isProf || isPipe ? (purchasePrice ?? null) : null,
+    purchaseCurrency:
+      (isPaint || isProf || isPipe) && purchasePrice != null ? purchaseCurrency : null,
+    purchaseDate: isPaint || isProf || isPipe ? (purchaseDate ?? null) : null,
+  };
+}
+
 export default function AdminMaterialsPage() {
   const [rows, setRows] = useState<MaterialListItem[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<"add" | "edit">("add");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formInstanceId, setFormInstanceId] = useState(0);
   const [formCategory, setFormCategory] = useState<string>(MATERIAL_CATEGORIES[0].id);
 
+  const editingRow = useMemo(
+    () => (editingId ? rows.find((r) => r.id === editingId) ?? null : null),
+    [rows, editingId],
+  );
+
   useEffect(() => {
-    if (addOpen) setFormCategory(MATERIAL_CATEGORIES[0].id);
-  }, [addOpen]);
+    if (formOpen && formMode === "add") {
+      setFormCategory(MATERIAL_CATEGORIES[0].id);
+    }
+  }, [formOpen, formMode]);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -67,55 +128,65 @@ export default function AdminMaterialsPage() {
   );
 
   const paintLike = isPaintLikeCategory(formCategory);
-  const profNostel = isProfNostelCategory(formCategory);
+  const profnastyl = isProfnastylCategory(formCategory);
   const pipeCat = isPipeCategory(formCategory);
 
-  function addMaterial(fd: FormData) {
+  const moneyPrefill =
+    formMode === "edit" && editingRow && formCategory === editingRow.category
+      ? {
+          amount: editingRow.purchasePrice ?? null,
+          currency: editingRow.purchaseCurrency ?? null,
+        }
+      : { amount: null as number | null, currency: null as string | null };
+
+  function closeForm() {
+    setFormOpen(false);
+    setEditingId(null);
     setError(null);
-    const name = String(fd.get("name") ?? "").trim();
-    const notes = String(fd.get("notes") ?? "").trim();
-    const category = formCategory;
-    if (!name) {
+  }
+
+  function openAdd() {
+    setFormMode("add");
+    setEditingId(null);
+    setFormInstanceId((i) => i + 1);
+    setFormOpen(true);
+    setError(null);
+  }
+
+  function openEdit(m: MaterialListItem) {
+    setFormMode("edit");
+    setEditingId(m.id);
+    setFormCategory(m.category);
+    setFormInstanceId((i) => i + 1);
+    setFormOpen(true);
+    setError(null);
+  }
+
+  function saveMaterial(fd: FormData) {
+    setError(null);
+    const payload = materialPayloadFromForm(fd, formCategory);
+    if (!payload.name) {
       setError("Вкажіть назву матеріалу.");
       return;
     }
-    const manufacturer = String(fd.get("manufacturer") ?? "").trim();
-    const productCode = String(fd.get("productCode") ?? "").trim();
-    const dimensions = String(fd.get("dimensions") ?? "").trim();
-    const wallThickness = String(fd.get("wallThickness") ?? "").trim();
-    const sheetHeight = String(fd.get("sheetHeight") ?? "").trim();
-    const sheetThickness = String(fd.get("sheetThickness") ?? "").trim();
-    const surfaceRaw = String(fd.get("surfaceFinish") ?? "");
-    const surfaceFinish =
-      surfaceRaw === "glossy" || surfaceRaw === "matte" ? surfaceRaw : null;
-    const purchasePrice = parsePurchasePriceInput(String(fd.get("purchasePrice") ?? ""));
-    const purchaseDate = parsePurchaseDateInput(String(fd.get("purchaseDate") ?? ""));
 
     void (async () => {
       setPending(true);
       try {
         const db = getFirebaseDb();
-        const isPaint = isPaintLikeCategory(category);
-        const isProf = isProfNostelCategory(category);
-        const isPipe = isPipeCategory(category);
-
-        await addDoc(collection(db, COL.materials), {
-          name,
-          category,
-          notes: notes || null,
-          manufacturer: isPaint ? (manufacturer || null) : null,
-          productCode: isPipe ? (productCode || null) : null,
-          dimensions: isPipe ? (dimensions || null) : null,
-          wallThickness: isPipe ? (wallThickness || null) : null,
-          sheetHeight: isProf ? (sheetHeight || null) : null,
-          sheetThickness: isProf ? (sheetThickness || null) : null,
-          surfaceFinish: isProf ? surfaceFinish : null,
-          purchasePrice: isPaint || isProf || isPipe ? (purchasePrice ?? null) : null,
-          purchaseDate: isPaint || isProf || isPipe ? (purchaseDate ?? null) : null,
-          createdAt: serverTimestamp(),
-        });
+        if (formMode === "edit" && editingId) {
+          await updateDoc(doc(db, COL.materials, editingId), {
+            ...payload,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, COL.materials), {
+            ...payload,
+            createdAt: serverTimestamp(),
+          });
+        }
         await load();
-        setAddOpen(false);
+        closeForm();
       } catch {
         setError("Не вдалося зберегти.");
       } finally {
@@ -124,12 +195,14 @@ export default function AdminMaterialsPage() {
     })();
   }
 
-  function remove(id: string) {
+  function remove(id: string, ev: MouseEvent) {
+    ev.stopPropagation();
     void (async () => {
       setPending(true);
       try {
         const db = getFirebaseDb();
         await deleteDoc(doc(db, COL.materials, id));
+        if (editingId === id) closeForm();
         await load();
       } finally {
         setPending(false);
@@ -137,13 +210,16 @@ export default function AdminMaterialsPage() {
     })();
   }
 
+  const draft = editingRow;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Довідник матеріалів</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          Для <strong>Prof. Nostel</strong> — висота, товщина металу, поверхня (глянець або мат), дата та ціна закупівлі.
-          Для <strong>труби</strong> — номер, розміри, товщина стінки, дата та ціна. Для фарб — виробник, дата та ціна.
+          Натисніть на позицію в списку, щоб відкрити повну картку та змінити поля (як при додаванні). Для{" "}
+          <strong>Профнастил</strong> — висота, товщина, колір, поверхня, дата та сума (грн або USD). Для{" "}
+          <strong>труби</strong> — номер, розміри, товщина стінки. Для фарб — виробник.
         </p>
         {loadError ? (
           <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -158,7 +234,7 @@ export default function AdminMaterialsPage() {
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(ev) => setSearch(ev.target.value)}
             placeholder="Ключові слова…"
             className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
             autoComplete="off"
@@ -167,24 +243,27 @@ export default function AdminMaterialsPage() {
         <button
           type="button"
           onClick={() => {
-            setAddOpen((v) => !v);
-            setError(null);
+            if (formOpen) closeForm();
+            else openAdd();
           }}
           className="shrink-0 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90"
         >
-          {addOpen ? "Закрити" : "Додати матеріал"}
+          {formOpen ? "Закрити" : "Додати матеріал"}
         </button>
       </div>
 
-      {addOpen ? (
+      {formOpen ? (
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            addMaterial(new FormData(e.currentTarget));
+          key={formInstanceId}
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            saveMaterial(new FormData(ev.currentTarget));
           }}
           className="max-w-xl space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm"
         >
-          <h2 className="text-lg font-semibold text-foreground">Нова позиція</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            {formMode === "edit" ? "Редагування позиції" : "Нова позиція"}
+          </h2>
 
           <div>
             <label className="mb-1 block text-sm font-medium" htmlFor="category">
@@ -194,7 +273,7 @@ export default function AdminMaterialsPage() {
               id="category"
               name="category"
               value={formCategory}
-              onChange={(e) => setFormCategory(e.target.value)}
+              onChange={(ev) => setFormCategory(ev.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
             >
               {MATERIAL_CATEGORIES.map((c) => (
@@ -213,6 +292,7 @@ export default function AdminMaterialsPage() {
               id="name"
               name="name"
               required
+              defaultValue={draft?.name ?? ""}
               className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
               placeholder="Напр. RAL 8017 мат"
             />
@@ -228,6 +308,7 @@ export default function AdminMaterialsPage() {
                 <input
                   id="manufacturer"
                   name="manufacturer"
+                  defaultValue={draft?.manufacturer ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                   placeholder="Напр. Tikkurila, Dufa"
                 />
@@ -240,27 +321,22 @@ export default function AdminMaterialsPage() {
                   id="purchaseDate-paint"
                   name="purchaseDate"
                   type="date"
+                  defaultValue={draft?.purchaseDate ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-paint">
-                  Ціна закупівлі (грн)
-                </label>
-                <input
-                  id="purchasePrice-paint"
-                  name="purchasePrice"
-                  inputMode="decimal"
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
-                  placeholder="0 або 1250,50"
-                />
-              </div>
+              <MaterialMoneyInput
+                idPrefix="paint"
+                resetKey={formInstanceId}
+                initialAmount={paintLike ? moneyPrefill.amount : null}
+                initialCurrency={paintLike ? moneyPrefill.currency : null}
+              />
             </div>
           ) : null}
 
-          {profNostel ? (
+          {profnastyl ? (
             <div className="space-y-3 rounded-xl border border-border bg-accent-soft/30 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted">Prof. Nostel</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Профнастил</p>
               <div>
                 <label className="mb-1 block text-sm font-medium" htmlFor="sheetHeight">
                   Висота
@@ -268,6 +344,7 @@ export default function AdminMaterialsPage() {
                 <input
                   id="sheetHeight"
                   name="sheetHeight"
+                  defaultValue={draft?.sheetHeight ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                   placeholder="Напр. висота хвилі 44 мм"
                 />
@@ -279,6 +356,7 @@ export default function AdminMaterialsPage() {
                 <input
                   id="sheetThickness"
                   name="sheetThickness"
+                  defaultValue={draft?.sheetThickness ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                   placeholder="Напр. 0,5 мм"
                 />
@@ -290,8 +368,8 @@ export default function AdminMaterialsPage() {
                 <select
                   id="surfaceFinish"
                   name="surfaceFinish"
+                  defaultValue={draft?.surfaceFinish ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
-                  defaultValue=""
                 >
                   <option value="">— оберіть —</option>
                   {SURFACE_FINISH_OPTIONS.map((o) => (
@@ -302,6 +380,18 @@ export default function AdminMaterialsPage() {
                 </select>
               </div>
               <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="sheetColor">
+                  Колір
+                </label>
+                <input
+                  id="sheetColor"
+                  name="sheetColor"
+                  defaultValue={draft?.sheetColor ?? ""}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="Напр. RAL 3005, червоний оксид"
+                />
+              </div>
+              <div>
                 <label className="mb-1 block text-sm font-medium" htmlFor="purchaseDate-prof">
                   Дата закупівлі
                 </label>
@@ -309,21 +399,16 @@ export default function AdminMaterialsPage() {
                   id="purchaseDate-prof"
                   name="purchaseDate"
                   type="date"
+                  defaultValue={draft?.purchaseDate ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-prof">
-                  Ціна закупівлі (грн)
-                </label>
-                <input
-                  id="purchasePrice-prof"
-                  name="purchasePrice"
-                  inputMode="decimal"
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
-                  placeholder="0 або 320"
-                />
-              </div>
+              <MaterialMoneyInput
+                idPrefix="prof"
+                resetKey={formInstanceId}
+                initialAmount={profnastyl ? moneyPrefill.amount : null}
+                initialCurrency={profnastyl ? moneyPrefill.currency : null}
+              />
             </div>
           ) : null}
 
@@ -337,6 +422,7 @@ export default function AdminMaterialsPage() {
                 <input
                   id="productCode"
                   name="productCode"
+                  defaultValue={draft?.productCode ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                   placeholder="Внутрішній номер позиції"
                 />
@@ -348,6 +434,7 @@ export default function AdminMaterialsPage() {
                 <input
                   id="dimensions"
                   name="dimensions"
+                  defaultValue={draft?.dimensions ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                   placeholder="Напр. 20×30 мм"
                 />
@@ -359,6 +446,7 @@ export default function AdminMaterialsPage() {
                 <input
                   id="wallThickness"
                   name="wallThickness"
+                  defaultValue={draft?.wallThickness ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                   placeholder="Напр. 1,5 мм"
                 />
@@ -371,21 +459,16 @@ export default function AdminMaterialsPage() {
                   id="purchaseDate-pipe"
                   name="purchaseDate"
                   type="date"
+                  defaultValue={draft?.purchaseDate ?? ""}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                 />
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-pipe">
-                  Ціна закупівлі (грн)
-                </label>
-                <input
-                  id="purchasePrice-pipe"
-                  name="purchasePrice"
-                  inputMode="decimal"
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
-                  placeholder="0 або 320"
-                />
-              </div>
+              <MaterialMoneyInput
+                idPrefix="pipe"
+                resetKey={formInstanceId}
+                initialAmount={pipeCat ? moneyPrefill.amount : null}
+                initialCurrency={pipeCat ? moneyPrefill.currency : null}
+              />
             </div>
           ) : null}
 
@@ -397,6 +480,7 @@ export default function AdminMaterialsPage() {
               id="notes"
               name="notes"
               rows={2}
+              defaultValue={draft?.notes ?? ""}
               className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
             />
           </div>
@@ -407,15 +491,12 @@ export default function AdminMaterialsPage() {
               disabled={pending}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
-              Зберегти
+              {formMode === "edit" ? "Зберегти зміни" : "Зберегти"}
             </button>
             <button
               type="button"
               disabled={pending}
-              onClick={() => {
-                setAddOpen(false);
-                setError(null);
-              }}
+              onClick={closeForm}
               className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted transition hover:bg-accent-soft hover:text-foreground disabled:opacity-60"
             >
               Скасувати
@@ -433,7 +514,21 @@ export default function AdminMaterialsPage() {
         ) : (
           <ul className="divide-y divide-border rounded-xl border border-border bg-card">
             {filtered.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm">
+              <li
+                key={m.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openEdit(m)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    openEdit(m);
+                  }
+                }}
+                className={`flex cursor-pointer flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm transition hover:bg-accent-soft/50 ${
+                  formOpen && formMode === "edit" && editingId === m.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
+                }`}
+              >
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-foreground">{m.name}</p>
                   <p className="text-xs text-muted">{materialCategoryLabel(m.category)}</p>
@@ -447,7 +542,7 @@ export default function AdminMaterialsPage() {
                 <button
                   type="button"
                   disabled={pending}
-                  onClick={() => remove(m.id)}
+                  onClick={(ev) => remove(m.id, ev)}
                   className="shrink-0 text-sm text-red-700 hover:underline disabled:opacity-50"
                 >
                   Видалити
