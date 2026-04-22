@@ -2,7 +2,7 @@ export const MATERIAL_CATEGORIES = [
   { id: "paint", label: "Фарба" },
   { id: "primer", label: "Ґрунт" },
   { id: "solvent", label: "Розчинник" },
-  { id: "profile", label: "Профіль" },
+  { id: "profile", label: "Prof. Nostel" },
   { id: "pipe", label: "Труба" },
   { id: "fastener", label: "Кріплення" },
   { id: "other", label: "Інше" },
@@ -11,7 +11,6 @@ export const MATERIAL_CATEGORIES = [
 export type MaterialCategoryId = (typeof MATERIAL_CATEGORIES)[number]["id"];
 
 const LEGACY_LABELS: Record<string, string> = {
-  // старі id з попередніх версій
   metal: "Профіль / метал",
 };
 
@@ -25,8 +24,14 @@ export function isPaintLikeCategory(id: string): boolean {
   return id === "paint" || id === "primer" || id === "solvent";
 }
 
-export function isProfileLikeCategory(id: string): boolean {
-  return id === "profile" || id === "pipe";
+/** Категорія «Prof. Nostel» (профнастил тощо) — висота, товщина, глянець/мат */
+export function isProfNostelCategory(id: string): boolean {
+  return id === "profile";
+}
+
+/** Труба — номер, розміри, товщина стінки */
+export function isPipeCategory(id: string): boolean {
+  return id === "pipe";
 }
 
 /** Рядок з поля форми → число або null, якщо порожньо / невалідно */
@@ -65,6 +70,18 @@ export function formatPurchaseDateUa(iso: string | null | undefined): string | n
   return new Intl.DateTimeFormat("uk-UA", { dateStyle: "long" }).format(date);
 }
 
+export const SURFACE_FINISH_OPTIONS = [
+  { id: "glossy", label: "Глянець" },
+  { id: "matte", label: "Мат" },
+] as const;
+
+export type SurfaceFinishId = (typeof SURFACE_FINISH_OPTIONS)[number]["id"];
+
+export function surfaceFinishLabel(id: string | null | undefined): string | null {
+  if (!id) return null;
+  return SURFACE_FINISH_OPTIONS.find((o) => o.id === id)?.label ?? null;
+}
+
 export type MaterialFirestoreFields = {
   name: string;
   category: string;
@@ -76,6 +93,12 @@ export type MaterialFirestoreFields = {
   productCode?: string | null;
   dimensions?: string | null;
   wallThickness?: string | null;
+  /** Prof. Nostel — висота (напр. хвилі, мм) */
+  sheetHeight?: string | null;
+  /** Prof. Nostel — товщина металу */
+  sheetThickness?: string | null;
+  /** Prof. Nostel — глянець або мат */
+  surfaceFinish?: string | null;
 };
 
 export type MaterialListItem = { id: string } & MaterialFirestoreFields;
@@ -97,6 +120,11 @@ function coercePurchaseDate(value: unknown): string | null {
   return null;
 }
 
+function coerceSurfaceFinish(value: unknown): string | null {
+  if (value === "glossy" || value === "matte") return value;
+  return null;
+}
+
 /** Уніфікований розбір документа Firestore для списків матеріалів */
 export function parseMaterialDoc(id: string, data: Record<string, unknown>): MaterialListItem {
   const category = String(data.category ?? "other");
@@ -111,6 +139,9 @@ export function parseMaterialDoc(id: string, data: Record<string, unknown>): Mat
     productCode: (data.productCode as string | null | undefined) ?? null,
     dimensions: (data.dimensions as string | null | undefined) ?? null,
     wallThickness: (data.wallThickness as string | null | undefined) ?? null,
+    sheetHeight: (data.sheetHeight as string | null | undefined) ?? null,
+    sheetThickness: (data.sheetThickness as string | null | undefined) ?? null,
+    surfaceFinish: coerceSurfaceFinish(data.surfaceFinish),
   };
 }
 
@@ -119,13 +150,33 @@ export function materialDetailSubtexts(m: MaterialListItem): string[] {
   const lines: string[] = [];
   const price = formatPurchasePriceUa(m.purchasePrice ?? undefined);
   const dateLabel = formatPurchaseDateUa(m.purchaseDate ?? undefined);
+
   if (isPaintLikeCategory(m.category)) {
     const bits: string[] = [];
     if (m.manufacturer) bits.push(`Виробник: ${m.manufacturer}`);
     if (dateLabel) bits.push(`Дата закупівлі: ${dateLabel}`);
     if (price) bits.push(`Закупівля: ${price}`);
     if (bits.length) lines.push(bits.join(" · "));
-  } else if (isProfileLikeCategory(m.category)) {
+  } else if (isProfNostelCategory(m.category)) {
+    const bits: string[] = [];
+    const hasNostel =
+      (m.sheetHeight && m.sheetHeight.trim()) ||
+      (m.sheetThickness && m.sheetThickness.trim()) ||
+      surfaceFinishLabel(m.surfaceFinish);
+    if (hasNostel) {
+      if (m.sheetHeight?.trim()) bits.push(`Висота: ${m.sheetHeight.trim()}`);
+      if (m.sheetThickness?.trim()) bits.push(`Товщина: ${m.sheetThickness.trim()}`);
+      const sf = surfaceFinishLabel(m.surfaceFinish);
+      if (sf) bits.push(`Поверхня: ${sf}`);
+    } else {
+      if (m.productCode) bits.push(`№ / артикул: ${m.productCode}`);
+      if (m.dimensions) bits.push(`Розміри: ${m.dimensions}`);
+      if (m.wallThickness) bits.push(`Товщина стінки: ${m.wallThickness}`);
+    }
+    if (dateLabel) bits.push(`Дата закупівлі: ${dateLabel}`);
+    if (price) bits.push(`Закупівля: ${price}`);
+    if (bits.length) lines.push(bits.join(" · "));
+  } else if (isPipeCategory(m.category)) {
     const bits: string[] = [];
     if (m.productCode) bits.push(`№ / артикул: ${m.productCode}`);
     if (m.dimensions) bits.push(`Розміри: ${m.dimensions}`);
@@ -143,11 +194,16 @@ export function materialDetailSubtexts(m: MaterialListItem): string[] {
 }
 
 export function materialSearchBlob(m: MaterialListItem): string {
+  const sf = surfaceFinishLabel(m.surfaceFinish);
   return [
     m.name,
     materialCategoryLabel(m.category),
     m.notes ?? "",
     m.purchaseDate ?? "",
+    m.sheetHeight ?? "",
+    m.sheetThickness ?? "",
+    sf ?? "",
+    m.surfaceFinish ?? "",
     ...materialDetailSubtexts(m),
   ]
     .join(" ")

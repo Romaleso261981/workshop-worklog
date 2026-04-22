@@ -5,8 +5,10 @@ import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/fire
 import { COL } from "@/lib/firestore/collections";
 import {
   MATERIAL_CATEGORIES,
+  SURFACE_FINISH_OPTIONS,
   isPaintLikeCategory,
-  isProfileLikeCategory,
+  isPipeCategory,
+  isProfNostelCategory,
   materialCategoryLabel,
   materialDetailSubtexts,
   materialSearchBlob,
@@ -65,7 +67,8 @@ export default function AdminMaterialsPage() {
   );
 
   const paintLike = isPaintLikeCategory(formCategory);
-  const profileLike = isProfileLikeCategory(formCategory);
+  const profNostel = isProfNostelCategory(formCategory);
+  const pipeCat = isPipeCategory(formCategory);
 
   function addMaterial(fd: FormData) {
     setError(null);
@@ -80,6 +83,11 @@ export default function AdminMaterialsPage() {
     const productCode = String(fd.get("productCode") ?? "").trim();
     const dimensions = String(fd.get("dimensions") ?? "").trim();
     const wallThickness = String(fd.get("wallThickness") ?? "").trim();
+    const sheetHeight = String(fd.get("sheetHeight") ?? "").trim();
+    const sheetThickness = String(fd.get("sheetThickness") ?? "").trim();
+    const surfaceRaw = String(fd.get("surfaceFinish") ?? "");
+    const surfaceFinish =
+      surfaceRaw === "glossy" || surfaceRaw === "matte" ? surfaceRaw : null;
     const purchasePrice = parsePurchasePriceInput(String(fd.get("purchasePrice") ?? ""));
     const purchaseDate = parsePurchaseDateInput(String(fd.get("purchaseDate") ?? ""));
 
@@ -87,18 +95,23 @@ export default function AdminMaterialsPage() {
       setPending(true);
       try {
         const db = getFirebaseDb();
+        const isPaint = isPaintLikeCategory(category);
+        const isProf = isProfNostelCategory(category);
+        const isPipe = isPipeCategory(category);
+
         await addDoc(collection(db, COL.materials), {
           name,
           category,
           notes: notes || null,
-          manufacturer: paintLike ? (manufacturer || null) : null,
-          productCode: profileLike ? (productCode || null) : null,
-          dimensions: profileLike ? (dimensions || null) : null,
-          wallThickness: profileLike ? (wallThickness || null) : null,
-          purchasePrice:
-            paintLike || profileLike ? (purchasePrice ?? null) : null,
-          purchaseDate:
-            paintLike || profileLike ? (purchaseDate ?? null) : null,
+          manufacturer: isPaint ? (manufacturer || null) : null,
+          productCode: isPipe ? (productCode || null) : null,
+          dimensions: isPipe ? (dimensions || null) : null,
+          wallThickness: isPipe ? (wallThickness || null) : null,
+          sheetHeight: isProf ? (sheetHeight || null) : null,
+          sheetThickness: isProf ? (sheetThickness || null) : null,
+          surfaceFinish: isProf ? surfaceFinish : null,
+          purchasePrice: isPaint || isProf || isPipe ? (purchasePrice ?? null) : null,
+          purchaseDate: isPaint || isProf || isPipe ? (purchaseDate ?? null) : null,
           createdAt: serverTimestamp(),
         });
         await load();
@@ -129,8 +142,8 @@ export default function AdminMaterialsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Довідник матеріалів</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          Категорії: фарба, ґрунт, розчинник, профіль, труба тощо. Для фарби — виробник, дата та ціна закупівлі; для
-          профілю чи труби — номер, розміри, товщина стінки, дата та ціна. Шукайте за будь-якими з цих полів.
+          Для <strong>Prof. Nostel</strong> — висота, товщина металу, поверхня (глянець або мат), дата та ціна закупівлі.
+          Для <strong>труби</strong> — номер, розміри, товщина стінки, дата та ціна. Для фарб — виробник, дата та ціна.
         </p>
         {loadError ? (
           <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -245,9 +258,78 @@ export default function AdminMaterialsPage() {
             </div>
           ) : null}
 
-          {profileLike ? (
+          {profNostel ? (
             <div className="space-y-3 rounded-xl border border-border bg-accent-soft/30 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted">Профіль або труба</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Prof. Nostel</p>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="sheetHeight">
+                  Висота
+                </label>
+                <input
+                  id="sheetHeight"
+                  name="sheetHeight"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="Напр. висота хвилі 44 мм"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="sheetThickness">
+                  Товщина
+                </label>
+                <input
+                  id="sheetThickness"
+                  name="sheetThickness"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="Напр. 0,5 мм"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="surfaceFinish">
+                  Поверхня
+                </label>
+                <select
+                  id="surfaceFinish"
+                  name="surfaceFinish"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  defaultValue=""
+                >
+                  <option value="">— оберіть —</option>
+                  {SURFACE_FINISH_OPTIONS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchaseDate-prof">
+                  Дата закупівлі
+                </label>
+                <input
+                  id="purchaseDate-prof"
+                  name="purchaseDate"
+                  type="date"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-prof">
+                  Ціна закупівлі (грн)
+                </label>
+                <input
+                  id="purchasePrice-prof"
+                  name="purchasePrice"
+                  inputMode="decimal"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                  placeholder="0 або 320"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {pipeCat ? (
+            <div className="space-y-3 rounded-xl border border-border bg-accent-soft/30 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Труба</p>
               <div>
                 <label className="mb-1 block text-sm font-medium" htmlFor="productCode">
                   Номер / артикул
@@ -282,22 +364,22 @@ export default function AdminMaterialsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="purchaseDate-profile">
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchaseDate-pipe">
                   Дата закупівлі
                 </label>
                 <input
-                  id="purchaseDate-profile"
+                  id="purchaseDate-pipe"
                   name="purchaseDate"
                   type="date"
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-profile">
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-pipe">
                   Ціна закупівлі (грн)
                 </label>
                 <input
-                  id="purchasePrice-profile"
+                  id="purchasePrice-pipe"
                   name="purchasePrice"
                   inputMode="decimal"
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
