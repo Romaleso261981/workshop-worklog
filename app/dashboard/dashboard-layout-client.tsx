@@ -133,12 +133,6 @@ export function DashboardLayoutClient({
                 <Link href="/dashboard/journal" className={navLink}>
                   Журнал
                 </Link>
-                <Link href="/dashboard/orders" className={navLink}>
-                  Замовлення
-                </Link>
-                <Link href="/dashboard/materials" className={navLink}>
-                  Матеріали
-                </Link>
               </>
             )}
             <button

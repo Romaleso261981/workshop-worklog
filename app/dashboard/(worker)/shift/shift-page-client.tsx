@@ -11,7 +11,6 @@ import {
   stageLabel,
 } from "@/lib/pipeline";
 import { collection, getDocs } from "firebase/firestore";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ShiftWorkForm, type OrderShiftMeta } from "./shift-work-form";
 
@@ -123,11 +122,8 @@ export function ShiftPageClient() {
         </div>
       ) : metas.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card p-6 text-sm text-muted">
-          Немає замовлень у виробництві. Див.{" "}
-          <Link href="/dashboard/orders" className="font-medium text-accent hover:underline">
-            замовлення
-          </Link>
-          .
+          Немає замовлень у виробництві. Адміністратор має додати замовлення в керуванні замовленнями — тоді вони
+          з’являться тут.
         </div>
       ) : (
         <ShiftWorkForm orders={metas} onDone={() => void load()} />

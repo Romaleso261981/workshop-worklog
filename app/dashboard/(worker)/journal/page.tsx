@@ -6,7 +6,7 @@ import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/fire
 import { COL } from "@/lib/firestore/collections";
 import { formatDateTime } from "@/lib/format";
 import { isPaintStage, stageLabel } from "@/lib/pipeline";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 
 function parseColors(json: string | null | undefined): { color: string; amount: string }[] {
@@ -42,7 +42,6 @@ type Row = {
   orderId?: string;
   orderNumber?: string;
   orderDescription?: string;
-  userName?: string;
 };
 
 export default function JournalPage() {
@@ -51,24 +50,23 @@ export default function JournalPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!user) {
+      setRows([]);
+      return;
+    }
     setLoadError(null);
     try {
       const db = getFirebaseDb();
-      const [weSnap, ordSnap, uSnap] = await Promise.all([
-        getDocs(collection(db, COL.workEntries)),
+      const [weSnap, ordSnap] = await Promise.all([
+        getDocs(
+          query(collection(db, COL.workEntries), where("userId", "==", user.uid)),
+        ),
         getDocs(collection(db, COL.orders)),
-        getDocs(collection(db, COL.users)),
       ]);
     const orderMap = Object.fromEntries(
       ordSnap.docs.map((d) => {
         const x = d.data() as { description?: string; number?: string };
         return [d.id, { description: x.description ?? "", number: x.number ?? "" }];
-      }),
-    );
-    const userMap = Object.fromEntries(
-      uSnap.docs.map((d) => {
-        const x = d.data() as { displayName?: string };
-        return [d.id, x.displayName ?? ""];
       }),
     );
 
@@ -98,7 +96,6 @@ export default function JournalPage() {
         orderId: oid,
         orderNumber: x.orderNumber ?? om?.number ?? "",
         orderDescription: om?.description ?? "",
-        userName: userMap[x.userId ?? ""] ?? "",
       };
     });
 
@@ -123,7 +120,7 @@ export default function JournalPage() {
       setRows([]);
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити журнал.");
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (user) void load();
@@ -140,7 +137,7 @@ export default function JournalPage() {
             {loadError}
           </p>
         ) : null}
-        <p className="mt-2 text-sm text-muted">Останні записи змін (Firestore).</p>
+        <p className="mt-2 text-sm text-muted">Лише ваші зміни (останні записи).</p>
       </div>
 
       <ul className="space-y-3">
@@ -179,7 +176,6 @@ export default function JournalPage() {
                       · {stageLabel(e.phase)}
                     </span>
                   </p>
-                  <span className="text-xs text-muted">{e.userName}</span>
                 </div>
                 {e.orderDescription ? (
                   <p className="mt-1 line-clamp-2 text-xs text-muted">{e.orderDescription}</p>
