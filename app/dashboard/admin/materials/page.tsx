@@ -213,14 +213,9 @@ export default function AdminMaterialsPage() {
   const draft = editingRow;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Довідник матеріалів</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
-          Натисніть на позицію в списку, щоб відкрити повну картку та змінити поля (як при додаванні). Для{" "}
-          <strong>Профнастил</strong> — висота, товщина, колір, поверхня, дата та сума (грн або USD). Для{" "}
-          <strong>труби</strong> — номер, розміри, товщина стінки. Для фарб — виробник.
-        </p>
         {loadError ? (
           <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
             {loadError}
@@ -228,15 +223,16 @@ export default function AdminMaterialsPage() {
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="block max-w-md flex-1 text-sm">
-          <span className="mb-1 block font-medium text-foreground">Пошук</span>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <label className="block min-w-0 flex-1 sm:max-w-md">
+          <span className="sr-only">Пошук</span>
           <input
             type="search"
             value={search}
             onChange={(ev) => setSearch(ev.target.value)}
-            placeholder="Ключові слова…"
-            className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+            placeholder="Пошук…"
+            aria-label="Пошук по довіднику"
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
             autoComplete="off"
           />
         </label>
@@ -506,7 +502,7 @@ export default function AdminMaterialsPage() {
       ) : null}
 
       <section>
-        <h2 className="sr-only">Список матеріалів</h2>
+        <h2 className="mb-3 text-sm font-semibold text-foreground">Список матеріалів</h2>
         {rows.length === 0 ? (
           <p className="text-sm text-muted">Поки порожньо.</p>
         ) : filtered.length === 0 ? (
@@ -516,16 +512,7 @@ export default function AdminMaterialsPage() {
             {filtered.map((m) => (
               <li
                 key={m.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => openEdit(m)}
-                onKeyDown={(ev) => {
-                  if (ev.key === "Enter" || ev.key === " ") {
-                    ev.preventDefault();
-                    openEdit(m);
-                  }
-                }}
-                className={`flex cursor-pointer flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm transition hover:bg-accent-soft/50 ${
+                className={`flex flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm ${
                   formOpen && formMode === "edit" && editingId === m.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
                 }`}
               >
@@ -539,23 +526,28 @@ export default function AdminMaterialsPage() {
                   ))}
                   {m.notes ? <p className="mt-1 text-xs text-muted">{m.notes}</p> : null}
                 </div>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={(ev) => remove(m.id, ev)}
-                  className="shrink-0 text-sm text-red-700 hover:underline disabled:opacity-50"
-                >
-                  Видалити
-                </button>
+                <div className="flex shrink-0 flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => openEdit(m)}
+                    className="text-sm font-medium text-accent underline-offset-2 hover:underline disabled:opacity-50"
+                  >
+                    Редагувати
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={(ev) => remove(m.id, ev)}
+                    className="text-sm text-red-700 hover:underline disabled:opacity-50"
+                  >
+                    Видалити
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
-        {rows.length > 0 ? (
-          <p className="mt-2 text-xs text-muted">
-            Показано {filtered.length} з {rows.length}
-          </p>
-        ) : null}
       </section>
     </div>
   );

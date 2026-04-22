@@ -4,7 +4,6 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
 import { MaterialMoneyInput } from "@/components/material-money-input";
-import { OrderNpDeliveryFields } from "@/components/order-np-delivery-fields";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { formatDateTime } from "@/lib/format";
 import {
@@ -262,35 +261,28 @@ export default function AdminOrdersPage() {
     if (o.orderSubject) lines.push(`Що виготовляємо: ${o.orderSubject}`);
     const money = formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH");
     if (money) lines.push(`Вартість: ${money}`);
-    if (o.npSettlementLabel) lines.push(`Населений пункт: ${o.npSettlementLabel}`);
-    if (o.npWarehouseLabel) lines.push(`Відділення НП: ${o.npWarehouseLabel}`);
     if (o.addressNote) lines.push(`Доставка: ${o.addressNote}`);
     return lines;
   }
 
   return (
     <div className="space-y-10">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Замовлення (керування)</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
-          Для підказок «населений пункт → відділення» додайте <code className="rounded bg-accent-soft px-1">NOVA_POSHTA_API_KEY</code> у{" "}
-          <code className="rounded bg-accent-soft px-1">.env.local</code> (як отримати ключ — у <code className="rounded bg-accent-soft px-1">.env.example</code>). Без ключа — ручний ввод. Натисніть рядок для редагування.
-        </p>
-        {loadError ? (
-          <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
-            {loadError}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-end gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Замовлення (керування)</h1>
+          {loadError ? (
+            <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
+              {loadError}
+            </p>
+          ) : null}
+        </div>
         <button
           type="button"
           onClick={() => {
             if (formOpen) closeForm();
             else openAdd();
           }}
-          className="shrink-0 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90"
+          className="shrink-0 self-start rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90 sm:self-auto"
         >
           {formOpen ? "Закрити" : "Додати замовлення"}
         </button>
@@ -410,13 +402,21 @@ export default function AdminOrdersPage() {
             label="Загальна вартість замовлення"
           />
 
-          <OrderNpDeliveryFields
-            resetKey={formInstanceId}
-            initialSettlementRef={draft?.npSettlementRef}
-            initialSettlementLabel={draft?.npSettlementLabel}
-            initialWarehouseRef={draft?.npWarehouseRef}
-            initialWarehouseLabel={draft?.npWarehouseLabel}
-          />
+          {formMode === "edit" && draft ? (
+            <>
+              <input type="hidden" name="npSettlementRef" value={draft.npSettlementRef ?? ""} />
+              <input type="hidden" name="npSettlementLabel" value={draft.npSettlementLabel ?? ""} />
+              <input type="hidden" name="npWarehouseRef" value={draft.npWarehouseRef ?? ""} />
+              <input type="hidden" name="npWarehouseLabel" value={draft.npWarehouseLabel ?? ""} />
+            </>
+          ) : (
+            <>
+              <input type="hidden" name="npSettlementRef" value="" />
+              <input type="hidden" name="npSettlementLabel" value="" />
+              <input type="hidden" name="npWarehouseRef" value="" />
+              <input type="hidden" name="npWarehouseLabel" value="" />
+            </>
+          )}
 
           <div>
             <label className="mb-1 block text-sm font-medium" htmlFor="addressNote">
@@ -427,7 +427,7 @@ export default function AdminOrdersPage() {
               name="addressNote"
               rows={2}
               defaultValue={draft?.addressNote ?? ""}
-              placeholder="Якщо відділення вже обрано вище — тут вулиця, будинок, поверх…"
+              placeholder="Вулиця, будинок, поверх, коментар…"
               className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
             />
           </div>

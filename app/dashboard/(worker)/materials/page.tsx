@@ -51,10 +51,6 @@ export default function MaterialsCatalogPage() {
             {loadError}
           </p>
         ) : null}
-        <p className="mt-2 text-sm text-muted">
-          Довідник цеху (фарби, ґрунти, розчинники, Профнастил, труби, кріплення). Редагування — у довіднику матеріалів
-          для адміністратора та власника.
-        </p>
       </div>
       {rows.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
