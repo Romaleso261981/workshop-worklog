@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Props = {
   resetKey: string | number;
@@ -8,6 +8,8 @@ type Props = {
   initialSettlementLabel?: string | null;
   initialWarehouseRef?: string | null;
   initialWarehouseLabel?: string | null;
+  /** Якщо true — без абзацу про NOVA_POSHTA_API_KEY / .env (наприклад у формі адміна). */
+  hideManualApiHint?: boolean;
 };
 
 /**
@@ -20,6 +22,7 @@ export function OrderNpDeliveryFields({
   initialSettlementLabel,
   initialWarehouseRef,
   initialWarehouseLabel,
+  hideManualApiHint = false,
 }: Props) {
   const [npAvailable, setNpAvailable] = useState<boolean | null>(null);
 
@@ -148,6 +151,12 @@ export function OrderNpDeliveryFields({
       .finally(() => setWhLoading(false));
   }, [setRef, npAvailable]);
 
+  /** Підпис для збереження: обраний зі списку або текст із поля пошуку, якщо API не дав обрати ref. */
+  const settlementLabelForSubmit = useMemo(
+    () => setLabel.trim() || query.trim(),
+    [setLabel, query],
+  );
+
   if (npAvailable === null) {
     return <p className="text-xs text-muted">Перевірка Нової Пошти…</p>;
   }
@@ -184,10 +193,12 @@ export function OrderNpDeliveryFields({
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
           />
         </div>
-        <p className="text-xs text-muted">
-          Щоб з’явились підказки як в інтернет-магазині (населений пункт → список відділень), додайте ключ{" "}
-          <code className="rounded bg-accent-soft px-1">NOVA_POSHTA_API_KEY</code> у <code className="rounded bg-accent-soft px-1">.env.local</code> — див. коментар у файлі <code className="rounded bg-accent-soft px-1">.env.example</code>.
-        </p>
+        {hideManualApiHint ? null : (
+          <p className="text-xs text-muted">
+            Щоб з’явились підказки як в інтернет-магазині (населений пункт → список відділень), додайте ключ{" "}
+            <code className="rounded bg-accent-soft px-1">NOVA_POSHTA_API_KEY</code> у <code className="rounded bg-accent-soft px-1">.env.local</code> — див. коментар у файлі <code className="rounded bg-accent-soft px-1">.env.example</code>.
+          </p>
+        )}
       </div>
     );
   }
@@ -195,7 +206,7 @@ export function OrderNpDeliveryFields({
   return (
     <div ref={wrapRef} className="space-y-4">
       <input type="hidden" name="npSettlementRef" value={setRef} />
-      <input type="hidden" name="npSettlementLabel" value={setLabel} />
+      <input type="hidden" name="npSettlementLabel" value={settlementLabelForSubmit} />
       <input type="hidden" name="npWarehouseRef" value={whRef} />
       <input type="hidden" name="npWarehouseLabel" value={whLabel} />
 
@@ -261,8 +272,12 @@ export function OrderNpDeliveryFields({
           <p className="text-xs text-muted">
             Обрано: <span className="text-foreground">{setLabel}</span>
           </p>
+        ) : query.trim() ? (
+          <p className="text-xs text-muted">
+            У замовлення піде введений текст: <span className="text-foreground">{query.trim()}</span>
+          </p>
         ) : (
-          <p className="text-xs text-muted">Оберіть населений пункт зі списку.</p>
+          <p className="text-xs text-muted">Оберіть населений пункт зі списку або введіть назву в полі вище.</p>
         )}
       </div>
 
@@ -274,10 +289,22 @@ export function OrderNpDeliveryFields({
           {whLoading ? (
             <p className="text-xs text-muted">Завантаження відділень…</p>
           ) : whItems.length === 0 ? (
-            <p className="text-xs text-amber-800">
-              Відділень не знайдено за цим населеним пунктом. Можна вказати номер відділення нижче в полі «Додатково до
-              адреси» або перевірте вибір населеного пункту.
-            </p>
+            <div className="space-y-2">
+              <p className="text-xs text-amber-800">
+                Відділень з API не завантажилось або список порожній. Можна ввести відділення текстом — воно збережеться з
+                замовленням.
+              </p>
+              <input
+                type="text"
+                value={whLabel}
+                onChange={(ev) => {
+                  setWhRef("");
+                  setWhLabel(ev.target.value);
+                }}
+                placeholder="Напр. Відділення №3 або повна адреса відділення"
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
+              />
+            </div>
           ) : (
             <select
               id="np-warehouse-select"

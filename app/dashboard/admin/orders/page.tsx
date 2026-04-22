@@ -4,6 +4,7 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
 import { MaterialMoneyInput } from "@/components/material-money-input";
+import { OrderNpDeliveryFields } from "@/components/order-np-delivery-fields";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { formatDateTime } from "@/lib/format";
 import {
@@ -261,6 +262,8 @@ export default function AdminOrdersPage() {
     if (o.orderSubject) lines.push(`Що виготовляємо: ${o.orderSubject}`);
     const money = formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH");
     if (money) lines.push(`Вартість: ${money}`);
+    if (o.npSettlementLabel) lines.push(`Населений пункт: ${o.npSettlementLabel}`);
+    if (o.npWarehouseLabel) lines.push(`Відділення НП: ${o.npWarehouseLabel}`);
     if (o.addressNote) lines.push(`Доставка: ${o.addressNote}`);
     return lines;
   }
@@ -402,21 +405,14 @@ export default function AdminOrdersPage() {
             label="Загальна вартість замовлення"
           />
 
-          {formMode === "edit" && draft ? (
-            <>
-              <input type="hidden" name="npSettlementRef" value={draft.npSettlementRef ?? ""} />
-              <input type="hidden" name="npSettlementLabel" value={draft.npSettlementLabel ?? ""} />
-              <input type="hidden" name="npWarehouseRef" value={draft.npWarehouseRef ?? ""} />
-              <input type="hidden" name="npWarehouseLabel" value={draft.npWarehouseLabel ?? ""} />
-            </>
-          ) : (
-            <>
-              <input type="hidden" name="npSettlementRef" value="" />
-              <input type="hidden" name="npSettlementLabel" value="" />
-              <input type="hidden" name="npWarehouseRef" value="" />
-              <input type="hidden" name="npWarehouseLabel" value="" />
-            </>
-          )}
+          <OrderNpDeliveryFields
+            resetKey={formInstanceId}
+            hideManualApiHint
+            initialSettlementRef={draft?.npSettlementRef}
+            initialSettlementLabel={draft?.npSettlementLabel}
+            initialWarehouseRef={draft?.npWarehouseRef}
+            initialWarehouseLabel={draft?.npWarehouseLabel}
+          />
 
           <div>
             <label className="mb-1 block text-sm font-medium" htmlFor="addressNote">
