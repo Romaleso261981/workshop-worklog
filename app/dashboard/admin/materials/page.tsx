@@ -12,7 +12,6 @@ import {
   isPipeCategory,
   isProfnastylCategory,
   materialCategoryLabel,
-  materialDetailSubtexts,
   materialSearchBlob,
   parseMaterialDoc,
   parseMoneyAmountInput,
@@ -28,7 +27,7 @@ import {
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function matchesMaterialSearch(m: MaterialListItem, raw: string): boolean {
   const trimmed = raw.trim().toLowerCase();
@@ -195,8 +194,7 @@ export default function AdminMaterialsPage() {
     })();
   }
 
-  function remove(id: string, ev: MouseEvent) {
-    ev.stopPropagation();
+  function remove(id: string) {
     void (async () => {
       setPending(true);
       try {
@@ -497,6 +495,19 @@ export default function AdminMaterialsPage() {
             >
               Скасувати
             </button>
+            {formMode === "edit" && editingId ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  if (!window.confirm("Видалити цю позицію з довідника?")) return;
+                  void remove(editingId);
+                }}
+                className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-800 transition hover:bg-red-100 disabled:opacity-60"
+              >
+                Видалити
+              </button>
+            ) : null}
           </div>
         </form>
       ) : null}
@@ -512,38 +523,21 @@ export default function AdminMaterialsPage() {
             {filtered.map((m) => (
               <li
                 key={m.id}
-                className={`flex flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm ${
+                role="button"
+                tabIndex={0}
+                onClick={() => openEdit(m)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    openEdit(m);
+                  }
+                }}
+                className={`cursor-pointer px-4 py-4 text-sm transition hover:bg-accent-soft/50 ${
                   formOpen && formMode === "edit" && editingId === m.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
                 }`}
               >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-foreground">{m.name}</p>
-                  <p className="text-xs text-muted">{materialCategoryLabel(m.category)}</p>
-                  {materialDetailSubtexts(m).map((line, i) => (
-                    <p key={i} className="mt-1 text-xs text-muted">
-                      {line}
-                    </p>
-                  ))}
-                  {m.notes ? <p className="mt-1 text-xs text-muted">{m.notes}</p> : null}
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() => openEdit(m)}
-                    className="text-sm font-medium text-accent underline-offset-2 hover:underline disabled:opacity-50"
-                  >
-                    Редагувати
-                  </button>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={(ev) => remove(m.id, ev)}
-                    className="text-sm text-red-700 hover:underline disabled:opacity-50"
-                  >
-                    Видалити
-                  </button>
-                </div>
+                <p className="font-semibold text-foreground">{m.name}</p>
+                <p className="mt-0.5 text-xs text-muted">{materialCategoryLabel(m.category)}</p>
               </li>
             ))}
           </ul>
