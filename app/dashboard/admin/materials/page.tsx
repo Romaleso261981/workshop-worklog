@@ -11,6 +11,7 @@ import {
   materialDetailSubtexts,
   materialSearchBlob,
   parseMaterialDoc,
+  parsePurchaseDateInput,
   parsePurchasePriceInput,
   type MaterialListItem,
 } from "@/lib/material-categories";
@@ -80,6 +81,7 @@ export default function AdminMaterialsPage() {
     const dimensions = String(fd.get("dimensions") ?? "").trim();
     const wallThickness = String(fd.get("wallThickness") ?? "").trim();
     const purchasePrice = parsePurchasePriceInput(String(fd.get("purchasePrice") ?? ""));
+    const purchaseDate = parsePurchaseDateInput(String(fd.get("purchaseDate") ?? ""));
 
     void (async () => {
       setPending(true);
@@ -95,6 +97,8 @@ export default function AdminMaterialsPage() {
           wallThickness: profileLike ? (wallThickness || null) : null,
           purchasePrice:
             paintLike || profileLike ? (purchasePrice ?? null) : null,
+          purchaseDate:
+            paintLike || profileLike ? (purchaseDate ?? null) : null,
           createdAt: serverTimestamp(),
         });
         await load();
@@ -125,8 +129,8 @@ export default function AdminMaterialsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Довідник матеріалів</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          Категорії: фарба, ґрунт, розчинник, профіль, труба тощо. Для фарби вказуйте виробника та ціну закупівлі; для
-          профілю чи труби — номер, розміри, товщину стінки та закупівлю. Шукайте за будь-якими з цих полів.
+          Категорії: фарба, ґрунт, розчинник, профіль, труба тощо. Для фарби — виробник, дата та ціна закупівлі; для
+          профілю чи труби — номер, розміри, товщина стінки, дата та ціна. Шукайте за будь-якими з цих полів.
         </p>
         {loadError ? (
           <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -216,6 +220,17 @@ export default function AdminMaterialsPage() {
                 />
               </div>
               <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchaseDate-paint">
+                  Дата закупівлі
+                </label>
+                <input
+                  id="purchaseDate-paint"
+                  name="purchaseDate"
+                  type="date"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
+                />
+              </div>
+              <div>
                 <label className="mb-1 block text-sm font-medium" htmlFor="purchasePrice-paint">
                   Ціна закупівлі (грн)
                 </label>
@@ -264,6 +279,17 @@ export default function AdminMaterialsPage() {
                   name="wallThickness"
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                   placeholder="Напр. 1,5 мм"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="purchaseDate-profile">
+                  Дата закупівлі
+                </label>
+                <input
+                  id="purchaseDate-profile"
+                  name="purchaseDate"
+                  type="date"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none ring-accent focus:ring-2"
                 />
               </div>
               <div>
