@@ -124,6 +124,15 @@ export function DashboardLayoutClient({
                 <Link href="/dashboard/admin/materials" className={`${navLink} text-accent`}>
                   Матеріали
                 </Link>
+                <Link href="/dashboard/admin/work-journal" className={navLink}>
+                  Журнал робіт
+                </Link>
+                <Link href="/dashboard/admin/work-hours" className={navLink}>
+                  Робочий час
+                </Link>
+                <Link href="/dashboard/admin/salary" className={navLink}>
+                  Зарплата
+                </Link>
               </>
             ) : (
               <>
