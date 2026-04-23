@@ -7,7 +7,7 @@ import { formatDateTime } from "@/lib/format";
 import { isPaintStage, stageLabel } from "@/lib/pipeline";
 import { collection, getDocs } from "firebase/firestore";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function parseColors(json: string | null | undefined): { color: string; amount: string }[] {
   if (!json) return [];
@@ -30,6 +30,72 @@ function parseColors(json: string | null | undefined): { color: string; amount: 
   }
 }
 
+function toMillis(ts: unknown): number | null {
+  if (
+    ts &&
+    typeof ts === "object" &&
+    "toMillis" in ts &&
+    typeof (ts as { toMillis: () => number }).toMillis === "function"
+  ) {
+    return (ts as { toMillis: () => number }).toMillis();
+  }
+  return null;
+}
+
+function formatYmdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function parseLocalDayStartMs(iso: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const [y, mo, d] = iso.split("-").map(Number);
+  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const t = new Date(y, mo - 1, d, 0, 0, 0, 0).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+function parseLocalDayEndMs(iso: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const [y, mo, d] = iso.split("-").map(Number);
+  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const t = new Date(y, mo - 1, d, 23, 59, 59, 999).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+type PeriodPreset = "all" | "month" | "year" | "custom";
+
+function timeRangeForPreset(
+  preset: PeriodPreset,
+  customFrom: string,
+  customTo: string,
+): { startMs: number; endMs: number } | null {
+  const now = new Date();
+  if (preset === "all") return null;
+  if (preset === "month") {
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    return {
+      startMs: new Date(y, m, 1, 0, 0, 0, 0).getTime(),
+      endMs: new Date(y, m + 1, 0, 23, 59, 59, 999).getTime(),
+    };
+  }
+  if (preset === "year") {
+    const y = now.getFullYear();
+    return {
+      startMs: new Date(y, 0, 1, 0, 0, 0, 0).getTime(),
+      endMs: new Date(y, 11, 31, 23, 59, 59, 999).getTime(),
+    };
+  }
+  const a = parseLocalDayStartMs(customFrom);
+  const b = parseLocalDayEndMs(customTo);
+  if (a == null || b == null) return null;
+  if (a <= b) return { startMs: a, endMs: b };
+  return { startMs: b, endMs: a };
+}
+
 type Row = {
   id: string;
   phase: string;
@@ -45,9 +111,17 @@ type Row = {
   userName: string;
 };
 
+type WorkerOption = { uid: string; name: string };
+
 export default function AdminWorkJournalPage() {
-  const [rows, setRows] = useState<Row[]>([]);
+  const [baseRows, setBaseRows] = useState<Row[]>([]);
+  const [workers, setWorkers] = useState<WorkerOption[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [workerId, setWorkerId] = useState("");
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("month");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -71,6 +145,14 @@ export default function AdminWorkJournalPage() {
           return [d.id, name];
         }),
       );
+
+      const workerOpts: WorkerOption[] = uSnap.docs
+        .map((d) => {
+          const x = d.data() as { displayName?: string; email?: string };
+          const name = (x.displayName ?? "").trim() || (x.email ?? "").trim() || d.id;
+          return { uid: d.id, name };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, "uk"));
 
       const list: Row[] = weSnap.docs.map((d) => {
         const x = d.data() as {
@@ -104,20 +186,16 @@ export default function AdminWorkJournalPage() {
       });
 
       list.sort((a, b) => {
-        const ta =
-          a.startedAt && typeof a.startedAt === "object" && "toMillis" in (a.startedAt as object)
-            ? (a.startedAt as { toMillis: () => number }).toMillis()
-            : 0;
-        const tb =
-          b.startedAt && typeof b.startedAt === "object" && "toMillis" in (b.startedAt as object)
-            ? (b.startedAt as { toMillis: () => number }).toMillis()
-            : 0;
+        const ta = toMillis(a.startedAt) ?? 0;
+        const tb = toMillis(b.startedAt) ?? 0;
         return tb - ta;
       });
 
-      setRows(list.slice(0, 300));
+      setBaseRows(list);
+      setWorkers(workerOpts);
     } catch (e) {
-      setRows([]);
+      setBaseRows([]);
+      setWorkers([]);
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити журнал.");
     }
   }, []);
@@ -125,6 +203,28 @@ export default function AdminWorkJournalPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const timeRange = useMemo(
+    () => timeRangeForPreset(periodPreset, customFrom, customTo),
+    [periodPreset, customFrom, customTo],
+  );
+
+  const customRangeIncomplete =
+    periodPreset === "custom" && (customFrom.trim() === "" || customTo.trim() === "");
+
+  const filteredRows = useMemo(() => {
+    return baseRows.filter((row) => {
+      if (workerId && row.userId !== workerId) return false;
+      if (periodPreset === "custom" && customRangeIncomplete) return true;
+      if (!timeRange) return true;
+      const t = toMillis(row.startedAt);
+      if (t == null) return false;
+      return t >= timeRange.startMs && t <= timeRange.endMs;
+    });
+  }, [baseRows, workerId, timeRange, periodPreset, customRangeIncomplete]);
+
+  const selectClass =
+    "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2";
 
   return (
     <div className="space-y-6">
@@ -134,7 +234,7 @@ export default function AdminWorkJournalPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Журнал робіт</h1>
         <p className="mt-1 text-sm text-muted">
-          Усі зміни та етапи по замовленнях (усі працівники). Останні записи зверху.
+          Оберіть працівника та період — показуємо записи за часом початку зміни (новіші зверху).
         </p>
         {loadError ? (
           <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -143,13 +243,101 @@ export default function AdminWorkJournalPage() {
         ) : null}
       </div>
 
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-foreground">Фільтри</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="wj-worker">
+              Працівник
+            </label>
+            <select
+              id="wj-worker"
+              value={workerId}
+              onChange={(e) => setWorkerId(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Усі працівники</option>
+              {workers.map((w) => (
+                <option key={w.uid} value={w.uid}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="wj-period">
+              Період
+            </label>
+            <select
+              id="wj-period"
+              value={periodPreset}
+              onChange={(e) => {
+                const v = e.target.value as PeriodPreset;
+                setPeriodPreset(v);
+                if (v === "custom") {
+                  const t = new Date();
+                  setCustomFrom((prev) => prev || formatYmdLocal(new Date(t.getFullYear(), t.getMonth(), 1)));
+                  setCustomTo((prev) => prev || formatYmdLocal(t));
+                }
+              }}
+              className={selectClass}
+            >
+              <option value="all">Усі дати</option>
+              <option value="month">Поточний місяць</option>
+              <option value="year">Поточний рік</option>
+              <option value="custom">Свій період</option>
+            </select>
+          </div>
+        </div>
+        {periodPreset === "custom" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="wj-from">
+                Від (дата)
+              </label>
+              <input
+                id="wj-from"
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="wj-to">
+                До (дата)
+              </label>
+              <input
+                id="wj-to"
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
+              />
+            </div>
+          </div>
+        ) : null}
+        {periodPreset === "custom" && customRangeIncomplete ? (
+          <p className="text-sm text-muted">Щоб обмежити період, оберіть обидві дати. Поки що показано всі дати.</p>
+        ) : null}
+        <p className="text-sm text-muted">
+          Знайдено записів: <span className="font-medium text-foreground">{filteredRows.length}</span>
+          {baseRows.length > 0 ? (
+            <>
+              {" "}
+              (усього в базі: <span className="tabular-nums">{baseRows.length}</span>)
+            </>
+          ) : null}
+        </p>
+      </section>
+
       <ul className="space-y-3">
-        {rows.length === 0 ? (
+        {filteredRows.length === 0 ? (
           <li className="rounded-xl border border-dashed border-border bg-card/50 px-4 py-8 text-center text-sm text-muted">
-            Поки що немає записів.
+            Немає записів за обраними умовами.
           </li>
         ) : (
-          rows.map((e) => {
+          filteredRows.map((e) => {
             const colors = parseColors(e.paintingColors);
             const paint = isPaintStage(e.phase);
             const start =
