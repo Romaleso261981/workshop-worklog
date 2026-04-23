@@ -2,8 +2,15 @@
 
 import { useAuth } from "@/components/auth-provider";
 import { canManageOrders } from "@/lib/order-manager-role";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
+
+/** Картка замовлення та список замовлень — спільні для працівників і керівництва (журнал робіт веде сюди). */
+function managerMayUseWorkerOrdersRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  if (pathname === "/dashboard/orders") return true;
+  return pathname.startsWith("/dashboard/orders/");
+}
 
 export default function WorkerRoutesLayout({
   children,
@@ -12,13 +19,15 @@ export default function WorkerRoutesLayout({
 }) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const ordersRouteForManager = managerMayUseWorkerOrdersRoute(pathname);
 
   useEffect(() => {
     if (loading || !user || !profile) return;
-    if (canManageOrders(profile.role)) {
+    if (canManageOrders(profile.role) && !ordersRouteForManager) {
       router.replace("/dashboard");
     }
-  }, [user, profile, loading, router]);
+  }, [user, profile, loading, router, ordersRouteForManager]);
 
   if (loading || !user || !profile) {
     return (
@@ -26,7 +35,7 @@ export default function WorkerRoutesLayout({
     );
   }
 
-  if (canManageOrders(profile.role)) {
+  if (canManageOrders(profile.role) && !ordersRouteForManager) {
     return (
       <div className="py-8 text-center text-sm text-muted">Перенаправлення…</div>
     );

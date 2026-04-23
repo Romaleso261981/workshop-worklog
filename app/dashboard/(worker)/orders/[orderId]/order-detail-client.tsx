@@ -13,6 +13,7 @@ import {
   type MaterialListItem,
 } from "@/lib/material-categories";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
+import { isPaintStage, stageLabel } from "@/lib/pipeline";
 import {
   addDoc,
   collection,
@@ -23,6 +24,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  where,
 } from "firebase/firestore";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -54,6 +56,22 @@ type IssuedRow = {
   createdAt: unknown;
 };
 
+type WorkLogRow = {
+  id: string;
+  phaseLabel: string;
+  userLabel: string;
+  startedAt: unknown;
+  endedAt: unknown;
+  notesPreview: string | null;
+};
+
+function tsMillis(v: unknown): number {
+  if (v && typeof v === "object" && "toMillis" in v && typeof (v as { toMillis: () => number }).toMillis === "function") {
+    return (v as { toMillis: () => number }).toMillis();
+  }
+  return 0;
+}
+
 function parseQuantity(raw: string): number | null {
   const s = String(raw).trim().replace(",", ".");
   if (!s) return null;
@@ -73,6 +91,7 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
   const [qtyRaw, setQtyRaw] = useState("1");
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [workLog, setWorkLog] = useState<WorkLogRow[]>([]);
 
   const canAddMaterials = order?.status === ORDER_IN_PRODUCTION;
 
@@ -129,6 +148,62 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
     }
   }, []);
 
+  const loadWorkLog = useCallback(async () => {
+    try {
+      const db = getFirebaseDb();
+      const [weSnap, uSnap] = await Promise.all([
+        getDocs(query(collection(db, COL.workEntries), where("orderId", "==", orderId))),
+        getDocs(collection(db, COL.users)),
+      ]);
+      const nameByUid = Object.fromEntries(
+        uSnap.docs.map((d) => {
+          const x = d.data() as { displayName?: string; email?: string };
+          const label = (x.displayName ?? "").trim() || (x.email ?? "").trim() || d.id;
+          return [d.id, label];
+        }),
+      );
+      const rows: WorkLogRow[] = weSnap.docs.map((d) => {
+        const x = d.data() as {
+          phase?: string;
+          userId?: string;
+          startedAt?: unknown;
+          endedAt?: unknown;
+          beforeOrderNotes?: string | null;
+          paintingColors?: string | null;
+        };
+        const phase = String(x.phase ?? "");
+        let notes: string | null = x.beforeOrderNotes ?? null;
+        if (isPaintStage(phase) && x.paintingColors) {
+          try {
+            const cols = JSON.parse(x.paintingColors) as { color?: string; amount?: string }[];
+            const bit = Array.isArray(cols)
+              ? cols
+                  .map((c) => `${(c.color ?? "").trim()} ${(c.amount ?? "").trim()}`.trim())
+                  .filter(Boolean)
+                  .join("; ")
+              : "";
+            notes = [notes, bit].filter(Boolean).join(" · ") || null;
+          } catch {
+            /* ignore */
+          }
+        }
+        const long = notes && notes.length > 240 ? `${notes.slice(0, 240)}…` : notes;
+        return {
+          id: d.id,
+          phaseLabel: stageLabel(phase),
+          userLabel: nameByUid[x.userId ?? ""] ?? (x.userId ? `${x.userId.slice(0, 8)}…` : "—"),
+          startedAt: x.startedAt ?? null,
+          endedAt: x.endedAt ?? null,
+          notesPreview: long,
+        };
+      });
+      rows.sort((a, b) => tsMillis(b.startedAt) - tsMillis(a.startedAt));
+      setWorkLog(rows);
+    } catch {
+      setWorkLog([]);
+    }
+  }, [orderId]);
+
   useEffect(() => {
     void loadOrder();
   }, [loadOrder]);
@@ -136,6 +211,10 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
   useEffect(() => {
     void loadMaterials();
   }, [loadMaterials]);
+
+  useEffect(() => {
+    void loadWorkLog();
+  }, [loadWorkLog]);
 
   useEffect(() => {
     if (!user) return;
@@ -315,6 +394,51 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
             <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{order.details}</p>
           </div>
         ) : null}
+      </section>
+
+      <section className="space-y-3 rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-foreground">Етапи</h2>
+        <p className="text-sm text-muted">
+          Черговість кроків (прибирання, фарбування, …). У кожному рядку нижче — хто вів зміну, коли почав і закінчив,
+          примітки. Для завершених замовлень тут повна історія.
+        </p>
+        {workLog.length === 0 ? (
+          <p className="text-sm text-muted">Поки немає записів по цьому замовленню.</p>
+        ) : (
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {workLog.map((row) => {
+              const start =
+                row.startedAt &&
+                typeof row.startedAt === "object" &&
+                "toDate" in row.startedAt &&
+                typeof (row.startedAt as { toDate: () => Date }).toDate === "function"
+                  ? formatDateTime((row.startedAt as { toDate: () => Date }).toDate())
+                  : "—";
+              const end =
+                row.endedAt &&
+                typeof row.endedAt === "object" &&
+                "toDate" in row.endedAt &&
+                typeof (row.endedAt as { toDate: () => Date }).toDate === "function"
+                  ? formatDateTime((row.endedAt as { toDate: () => Date }).toDate())
+                  : null;
+              return (
+                <li key={row.id} className="px-3 py-2.5 text-sm">
+                  <p className="font-medium text-foreground">
+                    {row.phaseLabel}
+                    <span className="ml-2 font-normal text-muted">· {row.userLabel}</span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {start}
+                    {end ? ` → ${end}` : " → …"}
+                  </p>
+                  {row.notesPreview ? (
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-foreground/90">{row.notesPreview}</p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       <section className="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm">

@@ -108,9 +108,9 @@ export default function OrdersCatalogPage() {
           "toMillis" in (b.completedAt as object)
             ? (b.completedAt as { toMillis: () => number }).toMillis()
             : 0;
-        return tb - ta;
-      })
-      .slice(0, 100);
+        if (tb !== ta) return tb - ta;
+        return b.number.localeCompare(a.number, "uk", { numeric: true });
+      });
       setDone(doneList);
     } catch (e) {
       setActive([]);

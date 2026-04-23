@@ -4,32 +4,12 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
 import { formatDateTime } from "@/lib/format";
-import { isPaintStage, stageLabel } from "@/lib/pipeline";
 import { WorkJournalPagination, WORK_JOURNAL_PAGE_SIZE } from "@/components/work-journal-pagination";
+import type { JournalOrderSource } from "@/lib/work-journal-orders";
+import { journalOrdersFromEntries } from "@/lib/work-journal-orders";
 import { collection, getDocs } from "firebase/firestore";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-function parseColors(json: string | null | undefined): { color: string; amount: string }[] {
-  if (!json) return [];
-  try {
-    const data = JSON.parse(json) as unknown;
-    if (!Array.isArray(data)) return [];
-    return data
-      .filter(
-        (x): x is { color: string; amount: string } =>
-          typeof x === "object" &&
-          x !== null &&
-          "color" in x &&
-          "amount" in x &&
-          typeof (x as { color: unknown }).color === "string" &&
-          typeof (x as { amount: unknown }).amount === "string",
-      )
-      .map((x) => ({ color: x.color, amount: x.amount }));
-  } catch {
-    return [];
-  }
-}
 
 function toMillis(ts: unknown): number | null {
   if (
@@ -131,6 +111,7 @@ type WorkerOption = { uid: string; name: string };
 
 export default function AdminWorkJournalPage() {
   const [baseRows, setBaseRows] = useState<Row[]>([]);
+  const [ordersById, setOrdersById] = useState<Record<string, JournalOrderSource>>({});
   const [workers, setWorkers] = useState<WorkerOption[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -150,10 +131,35 @@ export default function AdminWorkJournalPage() {
         getDocs(collection(db, COL.orders)),
         getDocs(collection(db, COL.users)),
       ]);
-      const orderMap = Object.fromEntries(
+      const orderMetaById = Object.fromEntries(
         ordSnap.docs.map((d) => {
           const x = d.data() as { description?: string; number?: string };
           return [d.id, { description: x.description ?? "", number: x.number ?? "" }];
+        }),
+      );
+      const orderJournalById: Record<string, JournalOrderSource> = Object.fromEntries(
+        ordSnap.docs.map((d) => {
+          const x = d.data() as {
+            number?: string;
+            createdAt?: unknown;
+            completedAt?: unknown;
+            status?: string;
+            npSettlementLabel?: string | null;
+            title?: string | null;
+            orderFor?: string | null;
+          };
+          return [
+            d.id,
+            {
+              number: x.number ?? "",
+              createdAt: x.createdAt,
+              completedAt: x.completedAt,
+              status: x.status,
+              npSettlementLabel: x.npSettlementLabel ?? null,
+              title: x.title ?? null,
+              orderFor: x.orderFor ?? null,
+            },
+          ];
         }),
       );
       const userMap = Object.fromEntries(
@@ -185,7 +191,7 @@ export default function AdminWorkJournalPage() {
           orderNumber?: string;
         };
         const oid = x.orderId ?? "";
-        const om = orderMap[oid] as { description?: string; number?: string } | undefined;
+        const om = orderMetaById[oid] as { description?: string; number?: string } | undefined;
         const uid = x.userId ?? "";
         return {
           id: d.id,
@@ -210,9 +216,11 @@ export default function AdminWorkJournalPage() {
       });
 
       setBaseRows(list);
+      setOrdersById(orderJournalById);
       setWorkers(workerOpts);
     } catch (e) {
       setBaseRows([]);
+      setOrdersById({});
       setWorkers([]);
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити журнал.");
     }
@@ -237,7 +245,7 @@ export default function AdminWorkJournalPage() {
   const customRangeIncomplete =
     periodPreset === "custom" && (customFrom.trim() === "" || customTo.trim() === "");
 
-  const filteredRows = useMemo(() => {
+  const filteredEntries = useMemo(() => {
     return baseRows.filter((row) => {
       if (workerId && row.userId !== workerId) return false;
       if (periodPreset === "custom" && customRangeIncomplete) return true;
@@ -248,19 +256,24 @@ export default function AdminWorkJournalPage() {
     });
   }, [baseRows, workerId, timeRange, periodPreset, customRangeIncomplete]);
 
+  const journalOrders = useMemo(
+    () => journalOrdersFromEntries(filteredEntries, ordersById),
+    [filteredEntries, ordersById],
+  );
+
   useEffect(() => {
     setPage(0);
   }, [workerId, periodPreset, customFrom, customTo, selectedMonthYm]);
 
   useEffect(() => {
-    const maxPage = Math.max(0, Math.ceil(filteredRows.length / WORK_JOURNAL_PAGE_SIZE) - 1);
+    const maxPage = Math.max(0, Math.ceil(journalOrders.length / WORK_JOURNAL_PAGE_SIZE) - 1);
     if (page > maxPage) setPage(maxPage);
-  }, [filteredRows.length, page]);
+  }, [journalOrders.length, page]);
 
-  const pagedRows = useMemo(() => {
+  const pagedOrders = useMemo(() => {
     const start = page * WORK_JOURNAL_PAGE_SIZE;
-    return filteredRows.slice(start, start + WORK_JOURNAL_PAGE_SIZE);
-  }, [filteredRows, page]);
+    return journalOrders.slice(start, start + WORK_JOURNAL_PAGE_SIZE);
+  }, [journalOrders, page]);
 
   const selectClass =
     "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2";
@@ -273,8 +286,12 @@ export default function AdminWorkJournalPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Журнал робіт</h1>
         <p className="mt-1 text-sm text-muted">
-          Оберіть працівника та період — показуємо записи за часом початку зміни (новіші зверху). У списку по{" "}
-          {WORK_JOURNAL_PAGE_SIZE} записів на сторінку, решта — через пагінацію внизу.
+          Один рядок на замовлення (без повтору по етапах). Потрапляють замовлення, де була зміна в обраному періоді
+          (за часом початку зміни). Деталі замовлення (етапи, хто вів зміну, час) — у{" "}
+          <Link href="/dashboard/orders" className="font-medium text-accent underline-offset-2 hover:underline">
+            картці замовлення
+          </Link>
+          . По {WORK_JOURNAL_PAGE_SIZE} замовлень на сторінку.
         </p>
         {loadError ? (
           <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -381,91 +398,75 @@ export default function AdminWorkJournalPage() {
           <p className="text-sm text-muted">Щоб обмежити період, оберіть обидві дати. Поки що показано всі дати.</p>
         ) : null}
         <p className="text-sm text-muted">
-          Знайдено записів: <span className="font-medium text-foreground">{filteredRows.length}</span>
+          Знайдено замовлень: <span className="font-medium text-foreground">{journalOrders.length}</span>
           {baseRows.length > 0 ? (
             <>
               {" "}
-              (усього в базі: <span className="tabular-nums">{baseRows.length}</span>)
+              (записів змін у базі: <span className="tabular-nums">{baseRows.length}</span>)
             </>
           ) : null}
         </p>
       </section>
 
       <ul className="space-y-3">
-        {filteredRows.length === 0 ? (
+        {journalOrders.length === 0 ? (
           <li className="rounded-xl border border-dashed border-border bg-card/50 px-4 py-8 text-center text-sm text-muted">
-            Немає записів за обраними умовами.
+            Немає замовлень за обраними умовами.
           </li>
         ) : (
-          pagedRows.map((e) => {
-            const colors = parseColors(e.paintingColors);
-            const paint = isPaintStage(e.phase);
-            const start =
-              e.startedAt &&
-              typeof e.startedAt === "object" &&
-              "toDate" in e.startedAt &&
-              typeof (e.startedAt as { toDate: () => Date }).toDate === "function"
-                ? formatDateTime((e.startedAt as { toDate: () => Date }).toDate())
+          pagedOrders.map((o) => {
+            const created =
+              o.createdAt &&
+              typeof o.createdAt === "object" &&
+              "toDate" in o.createdAt &&
+              typeof (o.createdAt as { toDate: () => Date }).toDate === "function"
+                ? formatDateTime((o.createdAt as { toDate: () => Date }).toDate())
                 : "—";
-            const end =
-              e.endedAt &&
-              typeof e.endedAt === "object" &&
-              "toDate" in e.endedAt &&
-              typeof (e.endedAt as { toDate: () => Date }).toDate === "function"
-                ? formatDateTime((e.endedAt as { toDate: () => Date }).toDate())
+            const closed =
+              !o.inProduction &&
+              o.completedAt &&
+              typeof o.completedAt === "object" &&
+              "toDate" in o.completedAt &&
+              typeof (o.completedAt as { toDate: () => Date }).toDate === "function"
+                ? formatDateTime((o.completedAt as { toDate: () => Date }).toDate())
                 : null;
 
             return (
-              <li key={e.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-semibold text-foreground">
-                    Замовлення <span className="tabular-nums">{e.orderNumber}</span>
-                    <span className="ml-2 text-sm font-normal text-muted">· {stageLabel(e.phase)}</span>
-                  </p>
-                  <span className="text-xs text-muted">{e.userName}</span>
+              <li key={o.orderId} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-foreground">
+                      Замовлення <span className="tabular-nums">{o.number}</span>
+                      {o.localityLabel !== "—" ? (
+                        <span className="ml-2 text-sm font-normal text-muted">· {o.localityLabel}</span>
+                      ) : null}
+                    </p>
+                    <p className="mt-2 text-xs text-muted">
+                      Створено: <span className="text-foreground">{created}</span>
+                      {" · "}
+                      {closed ? (
+                        <>
+                          Завершено: <span className="text-foreground">{closed}</span>
+                        </>
+                      ) : (
+                        <span className="text-amber-800">У виробництві</span>
+                      )}
+                    </p>
+                  </div>
+                  <Link
+                    href={`/dashboard/orders/${o.orderId}`}
+                    className="shrink-0 text-sm font-medium text-accent underline-offset-2 hover:underline"
+                  >
+                    Етапи →
+                  </Link>
                 </div>
-                {e.orderDescription ? (
-                  <p className="mt-1 line-clamp-2 text-xs text-muted">{e.orderDescription}</p>
-                ) : null}
-                <p className="mt-2 text-xs text-muted">
-                  Початок: {start}
-                  {end ? (
-                    <> · Завершення: {end}</>
-                  ) : (
-                    <> · <span className="font-medium text-amber-800">триває</span></>
-                  )}
-                </p>
-                {!paint && e.beforeOrderNotes ? (
-                  <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">{e.beforeOrderNotes}</p>
-                ) : null}
-                {paint && colors.length > 0 ? (
-                  <ul className="mt-3 list-inside list-disc text-sm text-foreground">
-                    {colors.map((c, i) => (
-                      <li key={i}>
-                        {c.color} — {c.amount}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {paint && e.paintingMaterials ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
-                    <span className="font-medium text-foreground">Матеріали: </span>
-                    {e.paintingMaterials}
-                  </p>
-                ) : null}
-                {paint && e.beforeOrderNotes ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
-                    <span className="font-medium text-foreground">Примітки: </span>
-                    {e.beforeOrderNotes}
-                  </p>
-                ) : null}
               </li>
             );
           })
         )}
       </ul>
 
-      <WorkJournalPagination page={page} total={filteredRows.length} onPageChange={setPage} />
+      <WorkJournalPagination page={page} total={journalOrders.length} onPageChange={setPage} />
     </div>
   );
 }

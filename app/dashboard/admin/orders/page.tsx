@@ -32,6 +32,7 @@ type OrderDoc = {
   details: string | null;
   status: string;
   createdAt?: unknown;
+  completedAt?: unknown;
   /** Для кого замовлення (кого «варимо») */
   orderFor?: string | null;
   /** Що виготовляємо */
@@ -108,6 +109,17 @@ export default function AdminOrdersPage() {
     try {
       const db = getFirebaseDb();
       const snap = await getDocs(collection(db, COL.orders));
+      function completedAtMillis(c: unknown): number {
+        if (
+          c &&
+          typeof c === "object" &&
+          "toMillis" in c &&
+          typeof (c as { toMillis: () => number }).toMillis === "function"
+        ) {
+          return (c as { toMillis: () => number }).toMillis();
+        }
+        return 0;
+      }
       const all: OrderDoc[] = snap.docs.map((d) => {
         const x = d.data() as {
           number?: string;
@@ -116,6 +128,7 @@ export default function AdminOrdersPage() {
           details?: string | null;
           status?: string;
           createdAt?: unknown;
+          completedAt?: unknown;
           orderFor?: string | null;
           orderSubject?: string | null;
           totalCost?: unknown;
@@ -140,6 +153,7 @@ export default function AdminOrdersPage() {
           details: x.details ?? null,
           status: x.status ?? ORDER_IN_PRODUCTION,
           createdAt: x.createdAt,
+          completedAt: x.completedAt,
           orderFor: x.orderFor ?? null,
           orderSubject: x.orderSubject ?? null,
           totalCost: tc,
@@ -159,8 +173,12 @@ export default function AdminOrdersPage() {
       setDone(
         all
           .filter((o) => o.status === ORDER_DONE)
-          .sort((a, b) => b.number.localeCompare(a.number))
-          .slice(0, 80),
+          .sort((a, b) => {
+            const ta = completedAtMillis(a.completedAt);
+            const tb = completedAtMillis(b.completedAt);
+            if (tb !== ta) return tb - ta;
+            return b.number.localeCompare(a.number, "uk", { numeric: true });
+          }),
       );
     } catch (e) {
       setActive([]);
@@ -257,6 +275,16 @@ export default function AdminOrdersPage() {
 
   function orderMetaLines(o: OrderDoc) {
     const lines: string[] = [];
+    if (o.status === ORDER_DONE && o.completedAt) {
+      const closed =
+        typeof o.completedAt === "object" &&
+        o.completedAt !== null &&
+        "toDate" in o.completedAt &&
+        typeof (o.completedAt as { toDate: () => Date }).toDate === "function"
+          ? formatDateTime((o.completedAt as { toDate: () => Date }).toDate())
+          : null;
+      if (closed) lines.push(`Закрито: ${closed}`);
+    }
     if (o.orderFor) lines.push(`Для кого: ${o.orderFor}`);
     if (o.orderSubject) lines.push(`Що виготовляємо: ${o.orderSubject}`);
     const money = formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH");

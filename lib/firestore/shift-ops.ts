@@ -4,6 +4,7 @@ import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import {
   completedStagesFromEntries,
   nextOpenStageId,
+  normalizePhase,
   PIPELINE_STAGES,
 } from "@/lib/pipeline";
 import { COL } from "@/lib/firestore/collections";
@@ -129,11 +130,14 @@ export async function finishActiveWorkEntryFirestore(entryId: string): Promise<v
   const ref = doc(db, COL.workEntries, entryId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
-  const data = snap.data() as { userId?: string; endedAt?: unknown; orderId?: string };
+  const data = snap.data() as { userId?: string; endedAt?: unknown; orderId?: string; phase?: string };
   if (data.userId !== userId) return;
   if (data.endedAt != null) return;
 
   const orderId = data.orderId?.trim() ?? "";
+  /** Етап рядка, який зараз закриваємо — одразу враховуємо в прогресі, бо після serverTimestamp() наступне
+   *  читання workEntries ще може показувати endedAt=null (гонка клієнта), і замовлення не переходило б у DONE. */
+  const phaseJustClosed = normalizePhase(String(data.phase ?? ""));
   await updateDoc(ref, { endedAt: serverTimestamp() });
 
   if (!orderId) return;
@@ -145,6 +149,7 @@ export async function finishActiveWorkEntryFirestore(entryId: string): Promise<v
     endedAt: (d.data() as { endedAt?: unknown }).endedAt ?? null,
   }));
   const done = completedStagesFromEntries(entries);
+  if (phaseJustClosed) done.add(phaseJustClosed);
   const next = nextOpenStageId(done);
   if (next !== null) return;
 
