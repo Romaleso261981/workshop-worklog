@@ -101,21 +101,18 @@ export default function JournalPage() {
     if (user) void load();
   }, [user, load]);
 
-  useEffect(() => {
-    setPage(0);
-  }, [user?.uid]);
-
   const journalOrders = useMemo(() => journalOrdersFromEntries(rows, ordersById), [rows, ordersById]);
 
-  useEffect(() => {
-    const maxPage = Math.max(0, Math.ceil(journalOrders.length / WORK_JOURNAL_PAGE_SIZE) - 1);
-    if (page > maxPage) setPage(maxPage);
-  }, [journalOrders.length, page]);
+  const journalMaxPage = useMemo(
+    () => Math.max(0, Math.ceil(journalOrders.length / WORK_JOURNAL_PAGE_SIZE) - 1),
+    [journalOrders.length],
+  );
+  const safeJournalPage = Math.min(Math.max(0, page), journalMaxPage);
 
   const pagedOrders = useMemo(() => {
-    const start = page * WORK_JOURNAL_PAGE_SIZE;
+    const start = safeJournalPage * WORK_JOURNAL_PAGE_SIZE;
     return journalOrders.slice(start, start + WORK_JOURNAL_PAGE_SIZE);
-  }, [journalOrders, page]);
+  }, [journalOrders, safeJournalPage]);
 
   if (!user) return null;
 
@@ -192,7 +189,7 @@ export default function JournalPage() {
         )}
       </ul>
 
-      <WorkJournalPagination page={page} total={journalOrders.length} onPageChange={setPage} />
+      <WorkJournalPagination page={safeJournalPage} total={journalOrders.length} onPageChange={setPage} />
     </div>
   );
 }

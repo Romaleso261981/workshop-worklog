@@ -261,19 +261,16 @@ export default function AdminWorkJournalPage() {
     [filteredEntries, ordersById],
   );
 
-  useEffect(() => {
-    setPage(0);
-  }, [workerId, periodPreset, customFrom, customTo, selectedMonthYm]);
-
-  useEffect(() => {
-    const maxPage = Math.max(0, Math.ceil(journalOrders.length / WORK_JOURNAL_PAGE_SIZE) - 1);
-    if (page > maxPage) setPage(maxPage);
-  }, [journalOrders.length, page]);
+  const journalMaxPage = useMemo(
+    () => Math.max(0, Math.ceil(journalOrders.length / WORK_JOURNAL_PAGE_SIZE) - 1),
+    [journalOrders.length],
+  );
+  const safeJournalPage = Math.min(Math.max(0, page), journalMaxPage);
 
   const pagedOrders = useMemo(() => {
-    const start = page * WORK_JOURNAL_PAGE_SIZE;
+    const start = safeJournalPage * WORK_JOURNAL_PAGE_SIZE;
     return journalOrders.slice(start, start + WORK_JOURNAL_PAGE_SIZE);
-  }, [journalOrders, page]);
+  }, [journalOrders, safeJournalPage]);
 
   const selectClass =
     "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2";
@@ -310,7 +307,10 @@ export default function AdminWorkJournalPage() {
             <select
               id="wj-worker"
               value={workerId}
-              onChange={(e) => setWorkerId(e.target.value)}
+              onChange={(e) => {
+                setPage(0);
+                setWorkerId(e.target.value);
+              }}
               className={selectClass}
             >
               <option value="">Усі працівники</option>
@@ -329,6 +329,7 @@ export default function AdminWorkJournalPage() {
               id="wj-period"
               value={periodPreset}
               onChange={(e) => {
+                setPage(0);
                 const v = e.target.value as PeriodPreset;
                 setPeriodPreset(v);
                 if (v === "month") {
@@ -358,7 +359,10 @@ export default function AdminWorkJournalPage() {
               id="wj-month"
               type="month"
               value={selectedMonthYm}
-              onChange={(e) => setSelectedMonthYm(e.target.value)}
+              onChange={(e) => {
+                setPage(0);
+                setSelectedMonthYm(e.target.value);
+              }}
               className="w-full max-w-xs rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2 sm:max-w-sm"
             />
             {selectedMonthLabel ? (
@@ -376,7 +380,10 @@ export default function AdminWorkJournalPage() {
                 id="wj-from"
                 type="date"
                 value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
+                onChange={(e) => {
+                  setPage(0);
+                  setCustomFrom(e.target.value);
+                }}
                 className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
               />
             </div>
@@ -388,7 +395,10 @@ export default function AdminWorkJournalPage() {
                 id="wj-to"
                 type="date"
                 value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
+                onChange={(e) => {
+                  setPage(0);
+                  setCustomTo(e.target.value);
+                }}
                 className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2"
               />
             </div>
@@ -466,7 +476,7 @@ export default function AdminWorkJournalPage() {
         )}
       </ul>
 
-      <WorkJournalPagination page={page} total={journalOrders.length} onPageChange={setPage} />
+      <WorkJournalPagination page={safeJournalPage} total={journalOrders.length} onPageChange={setPage} />
     </div>
   );
 }
