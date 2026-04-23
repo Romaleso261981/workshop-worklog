@@ -4,6 +4,7 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
 import { collection, getDocs } from "firebase/firestore";
+import { formatDurationMsUk } from "@/lib/format";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -79,7 +80,7 @@ export default function AdminWorkHoursPage() {
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Журнал робочого часу</h1>
         <p className="mt-1 text-sm text-muted">
           Підсумок за завершеними змінами: тривалість від «Початок» до «Завершення» по кожному запису в Firestore.
-          Незавершені зміни тут не враховуються.
+          Незавершені зміни тут не враховуються. Час показано як години та хвилини (наприклад, 11 год 41 хв).
         </p>
         {loadError ? (
           <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -91,9 +92,7 @@ export default function AdminWorkHoursPage() {
       {rows.length > 0 ? (
         <p className="text-sm text-muted">
           Усього за вибіркою:{" "}
-          <span className="font-medium text-foreground">
-            {(totalAll / 3_600_000).toFixed(2)} год
-          </span>
+          <span className="font-medium text-foreground">{formatDurationMsUk(totalAll)}</span>
         </p>
       ) : null}
 
@@ -103,7 +102,7 @@ export default function AdminWorkHoursPage() {
             <tr>
               <th className="px-4 py-3">Працівник</th>
               <th className="px-4 py-3 tabular-nums">Завершених змін</th>
-              <th className="px-4 py-3 tabular-nums">Годин</th>
+              <th className="px-4 py-3">Тривалість</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -118,7 +117,7 @@ export default function AdminWorkHoursPage() {
                 <tr key={r.userId}>
                   <td className="px-4 py-3 font-medium text-foreground">{r.displayName}</td>
                   <td className="px-4 py-3 tabular-nums text-muted">{r.closedShifts}</td>
-                  <td className="px-4 py-3 tabular-nums text-foreground">{(r.totalMs / 3_600_000).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-foreground">{formatDurationMsUk(r.totalMs)}</td>
                 </tr>
               ))
             )}
