@@ -129,8 +129,8 @@ export default function JournalPage() {
           </p>
         ) : null}
         <p className="mt-2 text-sm text-muted">
-          Один рядок на замовлення, де ви вели зміну. Етапи — у картці замовлення; хто що робив і коли — там у
-          деталях. По {WORK_JOURNAL_PAGE_SIZE} замовлень на сторінку.
+          Один рядок на замовлення, де ви вели зміну. Повні деталі (етапи, хто, коли) — у картці замовлення. По{" "}
+          {WORK_JOURNAL_PAGE_SIZE} замовлень на сторінку.
         </p>
       </div>
 
@@ -183,7 +183,7 @@ export default function JournalPage() {
                     href={`/dashboard/orders/${o.orderId}`}
                     className="shrink-0 text-sm font-medium text-accent underline-offset-2 hover:underline"
                   >
-                    Етапи →
+                    Деталі →
                   </Link>
                 </div>
               </li>

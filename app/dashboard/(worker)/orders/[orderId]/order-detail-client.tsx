@@ -397,10 +397,10 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
       </section>
 
       <section className="space-y-3 rounded-2xl border border-border bg-card p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-foreground">Етапи</h2>
+        <h2 className="text-lg font-semibold text-foreground">Деталі</h2>
         <p className="text-sm text-muted">
-          Черговість кроків (прибирання, фарбування, …). У кожному рядку нижче — хто вів зміну, коли почав і закінчив,
-          примітки. Для завершених замовлень тут повна історія.
+          Етапи, хто вів зміну, початок і кінець, примітки — по рядку на кожну зміну. Для закритих замовлень тут уся
+          історія.
         </p>
         {workLog.length === 0 ? (
           <p className="text-sm text-muted">Поки немає записів по цьому замовленню.</p>

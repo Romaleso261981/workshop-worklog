@@ -457,7 +457,7 @@ export default function AdminWorkJournalPage() {
                     href={`/dashboard/orders/${o.orderId}`}
                     className="shrink-0 text-sm font-medium text-accent underline-offset-2 hover:underline"
                   >
-                    Етапи →
+                    Докладніше →
                   </Link>
                 </div>
               </li>
