@@ -22,7 +22,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type OrderDoc = {
   id: string;
@@ -238,8 +238,7 @@ export default function AdminOrdersPage() {
     })();
   }
 
-  function completeOrder(orderId: string, ev: MouseEvent) {
-    ev.stopPropagation();
+  function completeOrder(orderId: string) {
     void (async () => {
       setPending(true);
       try {
@@ -433,15 +432,25 @@ export default function AdminOrdersPage() {
             <button
               type="submit"
               disabled={pending}
-              className="rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-60"
+              className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
             >
               {pending ? "…" : formMode === "edit" ? "Зберегти зміни" : "Додати в виробництво"}
             </button>
+            {formMode === "edit" && editingId && draft?.status === ORDER_IN_PRODUCTION ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => completeOrder(editingId)}
+                className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Зняти з виробництва
+              </button>
+            ) : null}
             <button
               type="button"
               disabled={pending}
               onClick={closeForm}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted transition hover:bg-accent-soft hover:text-foreground disabled:opacity-60"
+              className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
             >
               Скасувати
             </button>
@@ -473,41 +482,31 @@ export default function AdminOrdersPage() {
                   formOpen && formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
                 }`}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">
-                      <span className="tabular-nums">{o.number}</span>
-                      {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
+                <div>
+                  <p className="font-semibold">
+                    <span className="tabular-nums">{o.number}</span>
+                    {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
+                  </p>
+                  {orderMetaLines(o).map((line, i) => (
+                    <p key={i} className="mt-1 text-xs text-muted">
+                      {line}
                     </p>
-                    {orderMetaLines(o).map((line, i) => (
-                      <p key={i} className="mt-1 text-xs text-muted">
-                        {line}
-                      </p>
-                    ))}
-                    <p className="mt-2 whitespace-pre-wrap text-sm">{o.description}</p>
-                    {o.details ? (
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
-                        <span className="font-medium text-foreground">Додатково: </span>
-                        {o.details}
-                      </p>
-                    ) : null}
-                    <p className="mt-2 text-xs text-muted">
-                      Створено:{" "}
-                      {o.createdAt &&
-                      typeof o.createdAt === "object" &&
-                      "toDate" in o.createdAt
-                        ? formatDateTime((o.createdAt as { toDate: () => Date }).toDate())
-                        : "—"}
+                  ))}
+                  <p className="mt-2 whitespace-pre-wrap text-sm">{o.description}</p>
+                  {o.details ? (
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
+                      <span className="font-medium text-foreground">Додатково: </span>
+                      {o.details}
                     </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={(ev) => completeOrder(o.id, ev)}
-                    className="shrink-0 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
-                  >
-                    Зняти з виробництва
-                  </button>
+                  ) : null}
+                  <p className="mt-2 text-xs text-muted">
+                    Створено:{" "}
+                    {o.createdAt &&
+                    typeof o.createdAt === "object" &&
+                    "toDate" in o.createdAt
+                      ? formatDateTime((o.createdAt as { toDate: () => Date }).toDate())
+                      : "—"}
+                  </p>
                 </div>
               </li>
             ))}
