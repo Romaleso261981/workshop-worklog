@@ -6,8 +6,9 @@ import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/fire
 import { COL } from "@/lib/firestore/collections";
 import { formatDateTime } from "@/lib/format";
 import { isPaintStage, stageLabel } from "@/lib/pipeline";
+import { WorkJournalPagination, WORK_JOURNAL_PAGE_SIZE } from "@/components/work-journal-pagination";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function parseColors(json: string | null | undefined): { color: string; amount: string }[] {
   if (!json) return [];
@@ -48,6 +49,7 @@ export default function JournalPage() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
 
   const load = useCallback(async () => {
     if (!user) {
@@ -115,7 +117,7 @@ export default function JournalPage() {
       return tb - ta;
     });
 
-    setRows(list.slice(0, 150));
+    setRows(list);
     } catch (e) {
       setRows([]);
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити журнал.");
@@ -125,6 +127,20 @@ export default function JournalPage() {
   useEffect(() => {
     if (user) void load();
   }, [user, load]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(rows.length / WORK_JOURNAL_PAGE_SIZE) - 1);
+    if (page > maxPage) setPage(maxPage);
+  }, [rows.length, page]);
+
+  const pagedRows = useMemo(() => {
+    const start = page * WORK_JOURNAL_PAGE_SIZE;
+    return rows.slice(start, start + WORK_JOURNAL_PAGE_SIZE);
+  }, [rows, page]);
 
   if (!user) return null;
 
@@ -137,7 +153,9 @@ export default function JournalPage() {
             {loadError}
           </p>
         ) : null}
-        <p className="mt-2 text-sm text-muted">Лише ваші зміни (останні записи).</p>
+        <p className="mt-2 text-sm text-muted">
+          Лише ваші зміни. У списку по {WORK_JOURNAL_PAGE_SIZE} записів на сторінку, далі — пагінація.
+        </p>
       </div>
 
       <ul className="space-y-3">
@@ -146,7 +164,7 @@ export default function JournalPage() {
             Поки що немає записів.
           </li>
         ) : (
-          rows.map((e) => {
+          pagedRows.map((e) => {
             const colors = parseColors(e.paintingColors);
             const paint = isPaintStage(e.phase);
             const start =
@@ -217,6 +235,8 @@ export default function JournalPage() {
           })
         )}
       </ul>
+
+      <WorkJournalPagination page={page} total={rows.length} onPageChange={setPage} />
     </div>
   );
 }

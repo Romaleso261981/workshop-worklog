@@ -5,6 +5,7 @@ import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/fire
 import { COL } from "@/lib/firestore/collections";
 import { formatDateTime } from "@/lib/format";
 import { isPaintStage, stageLabel } from "@/lib/pipeline";
+import { WorkJournalPagination, WORK_JOURNAL_PAGE_SIZE } from "@/components/work-journal-pagination";
 import { collection, getDocs } from "firebase/firestore";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -122,6 +123,7 @@ export default function AdminWorkJournalPage() {
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("month");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [page, setPage] = useState(0);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -223,6 +225,20 @@ export default function AdminWorkJournalPage() {
     });
   }, [baseRows, workerId, timeRange, periodPreset, customRangeIncomplete]);
 
+  useEffect(() => {
+    setPage(0);
+  }, [workerId, periodPreset, customFrom, customTo]);
+
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(filteredRows.length / WORK_JOURNAL_PAGE_SIZE) - 1);
+    if (page > maxPage) setPage(maxPage);
+  }, [filteredRows.length, page]);
+
+  const pagedRows = useMemo(() => {
+    const start = page * WORK_JOURNAL_PAGE_SIZE;
+    return filteredRows.slice(start, start + WORK_JOURNAL_PAGE_SIZE);
+  }, [filteredRows, page]);
+
   const selectClass =
     "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2";
 
@@ -234,7 +250,8 @@ export default function AdminWorkJournalPage() {
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Журнал робіт</h1>
         <p className="mt-1 text-sm text-muted">
-          Оберіть працівника та період — показуємо записи за часом початку зміни (новіші зверху).
+          Оберіть працівника та період — показуємо записи за часом початку зміни (новіші зверху). У списку по{" "}
+          {WORK_JOURNAL_PAGE_SIZE} записів на сторінку, решта — через пагінацію внизу.
         </p>
         {loadError ? (
           <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
@@ -337,7 +354,7 @@ export default function AdminWorkJournalPage() {
             Немає записів за обраними умовами.
           </li>
         ) : (
-          filteredRows.map((e) => {
+          pagedRows.map((e) => {
             const colors = parseColors(e.paintingColors);
             const paint = isPaintStage(e.phase);
             const start =
@@ -404,6 +421,8 @@ export default function AdminWorkJournalPage() {
           })
         )}
       </ul>
+
+      <WorkJournalPagination page={page} total={filteredRows.length} onPageChange={setPage} />
     </div>
   );
 }
