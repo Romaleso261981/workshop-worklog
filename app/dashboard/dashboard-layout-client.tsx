@@ -42,7 +42,10 @@ export function DashboardLayoutClient({
       router.replace("/login");
       return;
     }
-  }, [user, loading, router]);
+    if (profile?.requiresEmailVerification && !user.emailVerified) {
+      router.replace("/verify-email");
+    }
+  }, [user, profile, loading, router]);
 
   useEffect(() => {
     if (!user || loading) {

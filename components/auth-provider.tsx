@@ -23,6 +23,8 @@ export type UserProfile = {
   displayName: string;
   email: string;
   role: AppRole;
+  /** Нові реєстрації: потрібне підтвердження email перед роботою в кабінеті. */
+  requiresEmailVerification?: boolean;
 };
 
 type AuthState = {
@@ -54,11 +56,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const ref = doc(db, COL.users, u.uid);
       const snap = await getDoc(ref);
       if (snap.exists()) {
-        const d = snap.data() as UserProfile;
+        const d = snap.data() as UserProfile & { requiresEmailVerification?: boolean };
         setProfile({
           displayName: d.displayName ?? u.displayName ?? "",
           email: d.email ?? u.email ?? "",
           role: (d.role as AppRole) ?? "EMPLOYEE",
+          requiresEmailVerification: d.requiresEmailVerification === true,
         });
       } else {
         const email = u.email ?? "";
@@ -70,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role,
           createdAt: serverTimestamp(),
         });
-        setProfile({ email, displayName, role });
+        setProfile({ email, displayName, role, requiresEmailVerification: false });
       }
       setLoading(false);
     });

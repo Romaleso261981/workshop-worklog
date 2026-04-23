@@ -3,7 +3,7 @@
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
 import { COL } from "@/lib/firestore/collections";
 import { roleFromEmail } from "@/lib/role-from-email";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { PasswordInput } from "@/components/password-input";
 import Link from "next/link";
@@ -37,9 +37,20 @@ export function RegisterForm() {
           email: email.trim(),
           displayName: displayName.trim(),
           role,
+          requiresEmailVerification: true,
           createdAt: serverTimestamp(),
         });
-        router.replace("/dashboard");
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        try {
+          if (origin) {
+            await sendEmailVerification(cred.user, { url: `${origin}/verify-email` });
+          } else {
+            await sendEmailVerification(cred.user);
+          }
+        } catch {
+          /* лист можна надіслати знову зі сторінки /verify-email */
+        }
+        router.replace("/verify-email");
       } catch {
         setError("Не вдалося зареєструватися (email зайнятий або слабкий пароль).");
       }

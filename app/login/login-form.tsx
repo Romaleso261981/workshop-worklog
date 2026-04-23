@@ -3,7 +3,7 @@
 import { PasswordInput } from "@/components/password-input";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
 import { COL } from "@/lib/firestore/collections";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -76,7 +76,16 @@ export function LoginForm() {
     startTransition(async () => {
       try {
         const auth = getFirebaseAuth();
-        await signInWithEmailAndPassword(auth, email.trim(), password);
+        const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+        const db = getFirebaseDb();
+        const snap = await getDoc(doc(db, COL.users, cred.user.uid));
+        const requires =
+          snap.exists() &&
+          (snap.data() as { requiresEmailVerification?: boolean }).requiresEmailVerification === true;
+        if (requires && !cred.user.emailVerified) {
+          router.replace("/verify-email");
+          return;
+        }
         router.replace("/dashboard");
       } catch {
         setError("Невірний email або пароль.");
@@ -151,6 +160,11 @@ export function LoginForm() {
           showPassword={showPassword}
           onToggleVisibility={() => setShowPassword((v) => !v)}
         />
+        <p className="mt-2 text-right text-sm">
+          <Link href="/login/forgot-password" className="font-medium text-accent underline-offset-2 hover:underline">
+            Забули пароль?
+          </Link>
+        </p>
       </div>
       {error ? (
         <p className="text-sm text-red-700" role="alert">
