@@ -127,6 +127,9 @@ export function DashboardLayoutClient({
                 <Link href="/dashboard/admin/work-journal" className={navLink}>
                   Журнал робіт
                 </Link>
+                <Link href="/dashboard/shift" className={navLink}>
+                  Зміна / цех
+                </Link>
                 <Link href="/dashboard/admin/work-hours" className={navLink}>
                   Робочий час
                 </Link>
