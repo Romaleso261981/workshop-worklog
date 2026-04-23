@@ -50,6 +50,22 @@ function formatYmdLocal(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Для `<input type="month" />` (локальний рік-місяць). */
+function formatYmLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function timeRangeForMonthYm(ym: string): { startMs: number; endMs: number } | null {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return null;
+  const [y, mo] = ym.split("-").map(Number);
+  if (!y || mo < 1 || mo > 12) return null;
+  const startMs = new Date(y, mo - 1, 1, 0, 0, 0, 0).getTime();
+  const endMs = new Date(y, mo, 0, 23, 59, 59, 999).getTime();
+  return { startMs, endMs };
+}
+
 function parseLocalDayStartMs(iso: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
   const [y, mo, d] = iso.split("-").map(Number);
@@ -72,16 +88,15 @@ function timeRangeForPreset(
   preset: PeriodPreset,
   customFrom: string,
   customTo: string,
+  selectedMonthYm: string,
 ): { startMs: number; endMs: number } | null {
   const now = new Date();
   if (preset === "all") return null;
   if (preset === "month") {
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    return {
-      startMs: new Date(y, m, 1, 0, 0, 0, 0).getTime(),
-      endMs: new Date(y, m + 1, 0, 23, 59, 59, 999).getTime(),
-    };
+    const r = timeRangeForMonthYm(selectedMonthYm);
+    if (r) return r;
+    const fallback = timeRangeForMonthYm(formatYmLocal(now));
+    return fallback ?? { startMs: now.getTime(), endMs: now.getTime() };
   }
   if (preset === "year") {
     const y = now.getFullYear();
@@ -121,6 +136,7 @@ export default function AdminWorkJournalPage() {
 
   const [workerId, setWorkerId] = useState("");
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("month");
+  const [selectedMonthYm, setSelectedMonthYm] = useState(() => formatYmLocal(new Date()));
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [page, setPage] = useState(0);
@@ -207,9 +223,16 @@ export default function AdminWorkJournalPage() {
   }, [load]);
 
   const timeRange = useMemo(
-    () => timeRangeForPreset(periodPreset, customFrom, customTo),
-    [periodPreset, customFrom, customTo],
+    () => timeRangeForPreset(periodPreset, customFrom, customTo, selectedMonthYm),
+    [periodPreset, customFrom, customTo, selectedMonthYm],
   );
+
+  const selectedMonthLabel = useMemo(() => {
+    const r = timeRangeForMonthYm(selectedMonthYm);
+    if (!r) return "";
+    const d = new Date(r.startMs);
+    return d.toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
+  }, [selectedMonthYm]);
 
   const customRangeIncomplete =
     periodPreset === "custom" && (customFrom.trim() === "" || customTo.trim() === "");
@@ -227,7 +250,7 @@ export default function AdminWorkJournalPage() {
 
   useEffect(() => {
     setPage(0);
-  }, [workerId, periodPreset, customFrom, customTo]);
+  }, [workerId, periodPreset, customFrom, customTo, selectedMonthYm]);
 
   useEffect(() => {
     const maxPage = Math.max(0, Math.ceil(filteredRows.length / WORK_JOURNAL_PAGE_SIZE) - 1);
@@ -291,6 +314,9 @@ export default function AdminWorkJournalPage() {
               onChange={(e) => {
                 const v = e.target.value as PeriodPreset;
                 setPeriodPreset(v);
+                if (v === "month") {
+                  setSelectedMonthYm((prev) => (timeRangeForMonthYm(prev) ? prev : formatYmLocal(new Date())));
+                }
                 if (v === "custom") {
                   const t = new Date();
                   setCustomFrom((prev) => prev || formatYmdLocal(new Date(t.getFullYear(), t.getMonth(), 1)));
@@ -300,12 +326,29 @@ export default function AdminWorkJournalPage() {
               className={selectClass}
             >
               <option value="all">Усі дати</option>
-              <option value="month">Поточний місяць</option>
+              <option value="month">Один місяць (календар)</option>
               <option value="year">Поточний рік</option>
               <option value="custom">Свій період</option>
             </select>
           </div>
         </div>
+        {periodPreset === "month" ? (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-foreground" htmlFor="wj-month">
+              Оберіть місяць
+            </label>
+            <input
+              id="wj-month"
+              type="month"
+              value={selectedMonthYm}
+              onChange={(e) => setSelectedMonthYm(e.target.value)}
+              className="w-full max-w-xs rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none ring-accent focus:ring-2 sm:max-w-sm"
+            />
+            {selectedMonthLabel ? (
+              <p className="mt-1 text-xs text-muted">{selectedMonthLabel}</p>
+            ) : null}
+          </div>
+        ) : null}
         {periodPreset === "custom" ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
