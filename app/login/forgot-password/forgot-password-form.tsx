@@ -35,6 +35,16 @@ export function ForgotPasswordForm() {
           setError("Некоректний формат email.");
         } else if (code === "auth/missing-email") {
           setError("Введіть email.");
+        } else if (code === "auth/unauthorized-continue-uri") {
+          setError(
+            "Firebase відхилив посилання після скидання: додайте домен цього сайту в Authentication → Settings → Authorized domains (наприклад, ваш *.web.app або власний домен).",
+          );
+        } else if (code === "auth/network-request-failed") {
+          setError("Немає зв’язку з мережею. Перевірте підключення та спробуйте знову.");
+        } else if (code === "auth/too-many-requests") {
+          setError("Забагато спроб. Зачекайте кілька хвилин і спробуйте знову.");
+        } else if (code === "auth/operation-not-allowed") {
+          setError("У проєкті вимкнено вхід за email/паролем. Увімкніть його в Firebase Console → Authentication.");
         } else {
           setError("Не вдалося надіслати лист. Перевірте email або спробуйте пізніше.");
         }
