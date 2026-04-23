@@ -52,7 +52,7 @@ export default function DashboardHome() {
             className="rounded-2xl border border-border bg-card p-6 shadow-sm transition hover:border-accent/40 hover:shadow"
           >
             <h2 className="text-lg font-semibold text-foreground">Облік зарплати</h2>
-            <p className="mt-2 text-sm text-muted">Журнал нарахувань і виплат (розділ у розробці).</p>
+            <p className="mt-2 text-sm text-muted">Денні ставки та нарахування від фактичного часу змін.</p>
           </Link>
         </div>
       </div>

@@ -69,5 +69,10 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update, delete: if isManager();
     }
+
+    match /employeeSalaryRates/{userId} {
+      allow read: if isManager();
+      allow create, update, delete: if isManager();
+    }
   }
 }

@@ -5,4 +5,6 @@ export const COL = {
   orderIssuedMaterials: "issuedMaterials",
   workEntries: "workEntries",
   materials: "materials",
+  /** Документ id = userId: денна ставка (грн) та норма годин для перерахунку з фактичного часу */
+  employeeSalaryRates: "employeeSalaryRates",
 } as const;
