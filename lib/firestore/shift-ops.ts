@@ -1,6 +1,6 @@
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
 import type { WorkActionResult } from "@/lib/work-constants";
-import { ORDER_IN_PRODUCTION } from "@/lib/order-status";
+import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import {
   completedStagesFromEntries,
   nextOpenStageId,
@@ -76,7 +76,7 @@ export async function startStageFirestore(input: {
 
   if (next === null) {
     return {
-      error: "Усі етапи по цьому замовленню вже завершені. Зніміть замовлення з виробництва в керуванні.",
+      error: "Усі етапи по цьому замовленню вже завершені. Після останнього етапу «Відправлення» замовлення автоматично в архіві — оновіть сторінку.",
     };
   }
 
@@ -129,9 +129,33 @@ export async function finishActiveWorkEntryFirestore(entryId: string): Promise<v
   const ref = doc(db, COL.workEntries, entryId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
-  const data = snap.data() as { userId?: string; endedAt?: unknown };
+  const data = snap.data() as { userId?: string; endedAt?: unknown; orderId?: string };
   if (data.userId !== userId) return;
   if (data.endedAt != null) return;
 
+  const orderId = data.orderId?.trim() ?? "";
   await updateDoc(ref, { endedAt: serverTimestamp() });
+
+  if (!orderId) return;
+
+  const entriesQ = query(collection(db, COL.workEntries), where("orderId", "==", orderId));
+  const entriesSnap = await getDocs(entriesQ);
+  const entries = entriesSnap.docs.map((d) => ({
+    phase: (d.data() as { phase: string }).phase,
+    endedAt: (d.data() as { endedAt?: unknown }).endedAt ?? null,
+  }));
+  const done = completedStagesFromEntries(entries);
+  const next = nextOpenStageId(done);
+  if (next !== null) return;
+
+  const ordRef = doc(db, COL.orders, orderId);
+  const ordSnap = await getDoc(ordRef);
+  if (!ordSnap.exists()) return;
+  const status = (ordSnap.data() as { status?: string }).status;
+  if (status !== ORDER_IN_PRODUCTION) return;
+
+  await updateDoc(ordRef, {
+    status: ORDER_DONE,
+    completedAt: serverTimestamp(),
+  });
 }

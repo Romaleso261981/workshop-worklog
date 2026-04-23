@@ -1,17 +1,24 @@
 /** Canonical production stages in strict order (per order). */
 export const PIPELINE_STAGES = [
-  { id: "STOCK", label: "Збір зі складу / комплектація" },
-  { id: "PREP", label: "Підготовка" },
-  { id: "PRIMER", label: "Грунт" },
+  { id: "CLEAN", label: "Прибирання" },
   { id: "PAINT", label: "Фарбування" },
+  { id: "PREP", label: "Підготовка" },
   { id: "PACK", label: "Упаковка" },
+  { id: "SEND", label: "Відправлення" },
 ] as const;
 
 export type StageId = (typeof PIPELINE_STAGES)[number]["id"];
 
+/** Останній етап: після його завершення замовлення можна перевести в архів (автоматично в застосунку). */
+export const PIPELINE_LAST_STAGE_ID: StageId = PIPELINE_STAGES[PIPELINE_STAGES.length - 1].id;
+
 const LEGACY_PHASE: Record<string, StageId | string> = {
   PREPARATION: "PREP",
   PAINTING: "PAINT",
+  /** Старий перший етап → новий «Прибирання» */
+  STOCK: "CLEAN",
+  /** Старий «Грунт» рахуємо як підготовку для сумісності з існуючими записами */
+  PRIMER: "PREP",
 };
 
 /** Map old DB values to canonical stage ids for progress checks. */

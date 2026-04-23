@@ -5,7 +5,7 @@ import type { WorkActionResult } from "@/lib/work-constants";
 import type { OrderSelectOption } from "@/lib/order-option";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 type Row = { color: string; amount: string };
 
@@ -64,11 +64,6 @@ export function ShiftWorkForm({
       setError("Оберіть замовлення з доступним етапом.");
       return;
     }
-    if (selected.blocked) {
-      setError("По цьому замовленню вже відкрита зміна. Дочекайтесь її завершення.");
-      return;
-    }
-
     startTransition(async () => {
       const res: WorkActionResult = await startStageFirestore({
         orderId,
@@ -88,6 +83,13 @@ export function ShiftWorkForm({
       router.refresh();
     });
   }
+
+  useEffect(() => {
+    if (orders.length === 0) return;
+    if (!orders.some((o) => o.id === orderId)) {
+      setOrderId(orders[0].id);
+    }
+  }, [orders, orderId]);
 
   if (orders.length === 0) {
     return null;
@@ -128,11 +130,9 @@ export function ShiftWorkForm({
       {selected ? (
         <div className="rounded-lg border border-border bg-accent-soft/40 px-3 py-2 text-sm">
           {selected.allDone && !selected.blocked ? (
-            <p className="text-foreground">Усі етапи пройдені. Можна зняти замовлення з виробництва в адмінці.</p>
-          ) : selected.blocked && selected.activePhaseLabel ? (
             <p className="text-foreground">
-              Зараз по замовленню виконується: <strong>{selected.activePhaseLabel}</strong>. Новий етап можна
-              почати після «Завершити зміну».
+              Усі етапи пройдені, замовлення в архіві. Якщо щойно завершили «Відправлення», оновіть сторінку — запис
+              зникне зі списку зміни.
             </p>
           ) : selected.nextLabel ? (
             <p className="text-foreground">
@@ -236,11 +236,7 @@ export function ShiftWorkForm({
       <button
         type="submit"
         disabled={
-          pending ||
-          !selected?.nextStageId ||
-          selected.blocked ||
-          selected.allDone ||
-          (!isPaint && !notes.trim())
+          pending || !selected?.nextStageId || selected.allDone || (!isPaint && !notes.trim())
         }
         className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
       >
