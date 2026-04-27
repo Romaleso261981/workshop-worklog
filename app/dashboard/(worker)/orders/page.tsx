@@ -23,7 +23,7 @@ type OrderRow = {
   status: string;
   completedAt?: unknown;
   orderFor?: string | null;
-  orderSubject?: string | null;
+  clientPhonePrimary?: string | null;
   totalCost?: number | null;
   totalCurrency?: string | null;
   npSettlementLabel?: string | null;
@@ -93,7 +93,7 @@ export default function OrdersCatalogPage() {
           status?: string;
           completedAt?: unknown;
           orderFor?: string | null;
-          orderSubject?: string | null;
+          clientPhonePrimary?: string | null;
           totalCost?: unknown;
           totalCurrency?: string | null;
           npSettlementLabel?: string | null;
@@ -116,7 +116,7 @@ export default function OrdersCatalogPage() {
           status: x.status ?? ORDER_IN_PRODUCTION,
           completedAt: x.completedAt,
           orderFor: x.orderFor ?? null,
-          orderSubject: x.orderSubject ?? null,
+          clientPhonePrimary: x.clientPhonePrimary ?? null,
           totalCost: tc,
           totalCurrency: x.totalCurrency ?? null,
           npSettlementLabel: x.npSettlementLabel ?? null,
@@ -243,9 +243,9 @@ export default function OrdersCatalogPage() {
                         Для кого: <span className="text-foreground">{o.orderFor}</span>
                       </p>
                     ) : null}
-                    {o.orderSubject ? (
+                    {o.clientPhonePrimary ? (
                       <p className="mt-0.5 text-xs text-muted">
-                        Що виготовляємо: <span className="text-foreground">{o.orderSubject}</span>
+                        Телефон: <span className="text-foreground">{o.clientPhonePrimary}</span>
                       </p>
                     ) : null}
                     {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH") ? (

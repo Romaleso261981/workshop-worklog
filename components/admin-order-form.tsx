@@ -68,13 +68,14 @@ export const AdminOrderForm = forwardRef<OrderPhotosEditorHandle, Props>(functio
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium" htmlFor="title">
-            Коротка назва
+            Код виробу
           </label>
           <input
             id="title"
             name="title"
             defaultValue={draft?.title ?? ""}
             className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
+            placeholder="Напр. A-01229"
           />
         </div>
       </div>
@@ -93,15 +94,18 @@ export const AdminOrderForm = forwardRef<OrderPhotosEditorHandle, Props>(functio
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm font-medium" htmlFor="orderSubject">
-            Що виготовляємо
+          <label className="mb-1 block text-sm font-medium" htmlFor="clientPhonePrimary">
+            Телефон клієнта
           </label>
           <input
-            id="orderSubject"
-            name="orderSubject"
-            defaultValue={draft?.orderSubject ?? ""}
+            id="clientPhonePrimary"
+            name="clientPhonePrimary"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            defaultValue={draft?.clientPhonePrimary ?? ""}
             className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-            placeholder="Коротко про виріб / роботу"
+            placeholder="Номер телефону"
           />
         </div>
       </div>

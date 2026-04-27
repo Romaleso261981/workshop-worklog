@@ -9,7 +9,7 @@ export type AdminOrderDoc = {
   createdAt?: unknown;
   completedAt?: unknown;
   orderFor?: string | null;
-  orderSubject?: string | null;
+  clientPhonePrimary?: string | null;
   totalCost?: number | null;
   totalCurrency?: string | null;
   npSettlementRef?: string | null;

@@ -68,7 +68,7 @@ export default function AdminOrdersPage() {
           createdAt?: unknown;
           completedAt?: unknown;
           orderFor?: string | null;
-          orderSubject?: string | null;
+          clientPhonePrimary?: string | null;
           totalCost?: unknown;
           totalCurrency?: string | null;
           npSettlementRef?: string | null;
@@ -94,7 +94,7 @@ export default function AdminOrdersPage() {
           createdAt: x.createdAt,
           completedAt: x.completedAt,
           orderFor: x.orderFor ?? null,
-          orderSubject: x.orderSubject ?? null,
+          clientPhonePrimary: x.clientPhonePrimary ?? null,
           totalCost: tc,
           totalCurrency: x.totalCurrency ?? null,
           npSettlementRef: x.npSettlementRef ?? null,
@@ -263,7 +263,7 @@ export default function AdminOrdersPage() {
       if (closed) lines.push(`Закрито: ${closed}`);
     }
     if (o.orderFor) lines.push(`Для кого: ${o.orderFor}`);
-    if (o.orderSubject) lines.push(`Що виготовляємо: ${o.orderSubject}`);
+    if (o.clientPhonePrimary) lines.push(`Телефон: ${o.clientPhonePrimary}`);
     const money = formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH");
     if (money) lines.push(`Вартість: ${money}`);
     if (o.npSettlementLabel) lines.push(`Населений пункт: ${o.npSettlementLabel}`);

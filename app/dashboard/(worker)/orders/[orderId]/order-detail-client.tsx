@@ -39,7 +39,7 @@ type OrderView = {
   details: string | null;
   status: string;
   orderFor: string | null;
-  orderSubject: string | null;
+  clientPhonePrimary: string | null;
   totalCost: number | null;
   totalCurrency: string | null;
   npSettlementLabel: string | null;
@@ -140,7 +140,7 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
         details: (x.details as string | null) ?? null,
         status: String(x.status ?? ORDER_IN_PRODUCTION),
         orderFor: (x.orderFor as string | null) ?? null,
-        orderSubject: (x.orderSubject as string | null) ?? null,
+        clientPhonePrimary: (x.clientPhonePrimary as string | null) ?? null,
         totalCost: tc,
         totalCurrency: (x.totalCurrency as string | null) ?? null,
         npSettlementLabel: (x.npSettlementLabel as string | null) ?? null,
@@ -323,7 +323,7 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
     <div class="meta">
       <p><b>Статус:</b> ${escHtml(statusText)}</p>
       <p><b>Для кого:</b> ${escHtml(order.orderFor ?? "—")}</p>
-      <p><b>Що виготовляємо:</b> ${escHtml(order.orderSubject ?? "—")}</p>
+    <p><b>Телефон:</b> ${escHtml(order.clientPhonePrimary ?? "—")}</p>
       <p><b>Вартість:</b> ${escHtml(money)}</p>
       <p><b>Населений пункт:</b> ${escHtml(order.npSettlementLabel ?? "—")}</p>
       <p><b>Відділення НП:</b> ${escHtml(order.npWarehouseLabel ?? "—")}</p>
@@ -489,9 +489,9 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
             Для кого: <span className="text-foreground">{order.orderFor}</span>
           </p>
         ) : null}
-        {order.orderSubject ? (
+        {order.clientPhonePrimary ? (
           <p className="text-sm text-muted">
-            Що виготовляємо: <span className="text-foreground">{order.orderSubject}</span>
+            Телефон: <span className="text-foreground">{order.clientPhonePrimary}</span>
           </p>
         ) : null}
         {money ? (

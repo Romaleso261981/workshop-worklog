@@ -6,7 +6,9 @@ export function orderPayloadFromForm(fd: FormData) {
   const description = String(fd.get("description") ?? "").trim();
   const details = String(fd.get("details") ?? "").trim();
   const orderFor = String(fd.get("orderFor") ?? "").trim();
-  const orderSubject = String(fd.get("orderSubject") ?? "").trim();
+  const clientPhonePrimary = String(fd.get("clientPhonePrimary") ?? "")
+    .replace(/[^\d()+\-\s]/g, "")
+    .trim();
   const totalCost = parseMoneyAmountInput(String(fd.get("totalCost") ?? ""));
   const totalCurrency = coercePurchaseCurrency(fd.get("totalCurrency"));
   const npSettlementRef = String(fd.get("npSettlementRef") ?? "").trim() || null;
@@ -21,7 +23,7 @@ export function orderPayloadFromForm(fd: FormData) {
     description,
     details: details || null,
     orderFor: orderFor || null,
-    orderSubject: orderSubject || null,
+    clientPhonePrimary: clientPhonePrimary || null,
     totalCost: totalCost ?? null,
     totalCurrency: totalCost != null ? totalCurrency : null,
     npSettlementRef,
