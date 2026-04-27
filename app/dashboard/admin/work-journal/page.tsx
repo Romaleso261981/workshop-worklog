@@ -4,6 +4,7 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
 import { formatDateTime } from "@/lib/format";
+import { completedStagesFromEntries, nextOpenStageId, stageLabel } from "@/lib/pipeline";
 import { WorkJournalPagination, WORK_JOURNAL_PAGE_SIZE } from "@/components/work-journal-pagination";
 import type { JournalOrderSource } from "@/lib/work-journal-orders";
 import { journalOrdersFromEntries } from "@/lib/work-journal-orders";
@@ -108,6 +109,10 @@ type Row = {
 };
 
 type WorkerOption = { uid: string; name: string };
+type OrderRuntimeStatus =
+  | { kind: "done" }
+  | { kind: "in_work"; stage: string; workers: string[] }
+  | { kind: "waiting"; stage: string };
 
 export default function AdminWorkJournalPage() {
   const [baseRows, setBaseRows] = useState<Row[]>([]);
@@ -260,6 +265,41 @@ export default function AdminWorkJournalPage() {
     () => journalOrdersFromEntries(filteredEntries, ordersById),
     [filteredEntries, ordersById],
   );
+
+  const runtimeByOrderId = useMemo(() => {
+    const byOrder = new Map<string, Row[]>();
+    for (const r of baseRows) {
+      const oid = (r.orderId ?? "").trim();
+      if (!oid) continue;
+      const list = byOrder.get(oid);
+      if (list) list.push(r);
+      else byOrder.set(oid, [r]);
+    }
+    const out: Record<string, OrderRuntimeStatus> = {};
+    for (const [orderId, ord] of Object.entries(ordersById)) {
+      if (!ord) continue;
+      if (String(ord.status ?? "") === "DONE") {
+        out[orderId] = { kind: "done" };
+        continue;
+      }
+      const rows = byOrder.get(orderId) ?? [];
+      const open = rows.filter((r) => r.endedAt == null);
+      if (open.length > 0) {
+        open.sort((a, b) => (toMillis(b.startedAt) ?? 0) - (toMillis(a.startedAt) ?? 0));
+        const workers = Array.from(new Set(open.map((r) => r.userName).filter(Boolean)));
+        out[orderId] = { kind: "in_work", stage: stageLabel(open[0].phase), workers };
+        continue;
+      }
+      const doneStages = completedStagesFromEntries(
+        rows.map((r) => ({ phase: r.phase, endedAt: r.endedAt })),
+      );
+      const nextStage = nextOpenStageId(doneStages);
+      out[orderId] = nextStage
+        ? { kind: "waiting", stage: stageLabel(nextStage) }
+        : { kind: "waiting", stage: "закриття замовлення" };
+    }
+    return out;
+  }, [baseRows, ordersById]);
 
   const journalMaxPage = useMemo(
     () => Math.max(0, Math.ceil(journalOrders.length / WORK_JOURNAL_PAGE_SIZE) - 1),
@@ -425,13 +465,6 @@ export default function AdminWorkJournalPage() {
           </li>
         ) : (
           pagedOrders.map((o) => {
-            const created =
-              o.createdAt &&
-              typeof o.createdAt === "object" &&
-              "toDate" in o.createdAt &&
-              typeof (o.createdAt as { toDate: () => Date }).toDate === "function"
-                ? formatDateTime((o.createdAt as { toDate: () => Date }).toDate())
-                : "—";
             const closed =
               !o.inProduction &&
               o.completedAt &&
@@ -440,6 +473,7 @@ export default function AdminWorkJournalPage() {
               typeof (o.completedAt as { toDate: () => Date }).toDate === "function"
                 ? formatDateTime((o.completedAt as { toDate: () => Date }).toDate())
                 : null;
+            const runtime = runtimeByOrderId[o.orderId];
 
             return (
               <li key={o.orderId} className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -451,17 +485,22 @@ export default function AdminWorkJournalPage() {
                         <span className="ml-2 text-sm font-normal text-muted">· {o.localityLabel}</span>
                       ) : null}
                     </p>
-                    <p className="mt-2 text-xs text-muted">
-                      Створено: <span className="text-foreground">{created}</span>
-                      {" · "}
-                      {closed ? (
-                        <>
-                          Завершено: <span className="text-foreground">{closed}</span>
-                        </>
-                      ) : (
-                        <span className="text-amber-800">У виробництві</span>
-                      )}
-                    </p>
+                    {runtime?.kind === "in_work" ? (
+                      <p className="mt-2 text-xs text-emerald-800">
+                        В роботі: <span className="font-medium">{runtime.stage}</span> · Виконує:{" "}
+                        <span className="font-medium">{runtime.workers.join(", ")}</span>
+                      </p>
+                    ) : runtime?.kind === "waiting" ? (
+                      <p className="mt-2 text-xs text-amber-900">
+                        Наразі не в роботі. Очікує етап: <span className="font-medium">{runtime.stage}</span>.
+                      </p>
+                    ) : closed ? (
+                      <p className="mt-2 text-xs text-muted">
+                        Завершено: <span className="text-foreground">{closed}</span>
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted">Наразі не в роботі.</p>
+                    )}
                   </div>
                   <Link
                     href={`/dashboard/orders/${o.orderId}`}
