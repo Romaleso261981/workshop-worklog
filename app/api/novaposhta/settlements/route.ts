@@ -86,6 +86,12 @@ export async function GET(req: Request) {
   let json = await call({ FindByString: q, Limit: "25" });
   if (!json.success) {
     json = await call({ CityName: q, Limit: "25" });
+  } else if (normalizeNpData(json.data).length === 0) {
+    /** FindByString часто дає порожній Addresses (напр. «ладижин»), CityName — знаходить ті самі населені пункти. */
+    const byCity = await call({ CityName: q, Limit: "25" });
+    if (byCity.success && normalizeNpData(byCity.data).length > 0) {
+      json = byCity;
+    }
   }
   if (!json.success) {
     const hint = npHintFromErrors(json.errors);
