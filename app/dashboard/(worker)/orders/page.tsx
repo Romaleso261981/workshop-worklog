@@ -6,7 +6,9 @@ import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/fire
 import { COL } from "@/lib/firestore/collections";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { formatDateTime } from "@/lib/format";
+import { OrderPhotoStrip } from "@/components/order-photo-strip";
 import { formatPurchaseMoney, parseMoneyAmountInput } from "@/lib/material-categories";
+import { normalizeOrderPhotoUrls } from "@/lib/order-photos";
 import { collection, getDocs } from "firebase/firestore";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -26,6 +28,7 @@ type OrderRow = {
   npSettlementLabel?: string | null;
   npWarehouseLabel?: string | null;
   addressNote?: string | null;
+  photoUrls: string[];
 };
 
 export default function OrdersCatalogPage() {
@@ -64,6 +67,7 @@ export default function OrdersCatalogPage() {
           npSettlementLabel?: string | null;
           npWarehouseLabel?: string | null;
           addressNote?: string | null;
+          photoUrls?: unknown;
         };
         const tc =
           typeof x.totalCost === "number" && Number.isFinite(x.totalCost)
@@ -86,6 +90,7 @@ export default function OrdersCatalogPage() {
           npSettlementLabel: x.npSettlementLabel ?? null,
           npWarehouseLabel: x.npWarehouseLabel ?? null,
           addressNote: x.addressNote ?? null,
+          photoUrls: normalizeOrderPhotoUrls(x.photoUrls),
         };
       });
     setActive(
@@ -159,10 +164,7 @@ export default function OrdersCatalogPage() {
         ) : (
           <ul className="space-y-3">
             {active.map((o) => (
-              <li
-                key={o.id}
-                className="rounded-xl border border-border bg-card p-4 shadow-sm"
-              >
+              <li key={o.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
                   <Link
                     href={`/dashboard/orders/${o.id}`}
@@ -171,50 +173,59 @@ export default function OrdersCatalogPage() {
                     Картка замовлення та матеріали →
                   </Link>
                 </div>
-                <p className="font-semibold text-foreground">
-                  <span className="tabular-nums">{o.number}</span>
-                  {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
-                </p>
-                {o.orderFor ? (
-                  <p className="mt-1 text-xs text-muted">
-                    Для кого: <span className="text-foreground">{o.orderFor}</span>
-                  </p>
-                ) : null}
-                {o.orderSubject ? (
-                  <p className="mt-0.5 text-xs text-muted">
-                    Що виготовляємо: <span className="text-foreground">{o.orderSubject}</span>
-                  </p>
-                ) : null}
-                {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH") ? (
-                  <p className="mt-0.5 text-xs text-muted">
-                    Вартість:{" "}
-                    <span className="text-foreground">
-                      {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH")}
-                    </span>
-                  </p>
-                ) : null}
-                {o.npSettlementLabel ? (
-                  <p className="mt-0.5 text-xs text-muted">
-                    Населений пункт: <span className="text-foreground">{o.npSettlementLabel}</span>
-                  </p>
-                ) : null}
-                {o.npWarehouseLabel ? (
-                  <p className="mt-0.5 text-xs text-muted">
-                    Відділення НП: <span className="text-foreground">{o.npWarehouseLabel}</span>
-                  </p>
-                ) : null}
-                {o.addressNote ? (
-                  <p className="mt-0.5 text-xs text-muted">
-                    Доставка: <span className="text-foreground">{o.addressNote}</span>
-                  </p>
-                ) : null}
-                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{o.description}</p>
-                {o.details ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
-                    <span className="font-medium text-foreground">Додатково: </span>
-                    {o.details}
-                  </p>
-                ) : null}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-foreground">
+                      <span className="tabular-nums">{o.number}</span>
+                      {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
+                    </p>
+                    {o.orderFor ? (
+                      <p className="mt-1 text-xs text-muted">
+                        Для кого: <span className="text-foreground">{o.orderFor}</span>
+                      </p>
+                    ) : null}
+                    {o.orderSubject ? (
+                      <p className="mt-0.5 text-xs text-muted">
+                        Що виготовляємо: <span className="text-foreground">{o.orderSubject}</span>
+                      </p>
+                    ) : null}
+                    {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH") ? (
+                      <p className="mt-0.5 text-xs text-muted">
+                        Вартість:{" "}
+                        <span className="text-foreground">
+                          {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH")}
+                        </span>
+                      </p>
+                    ) : null}
+                    {o.npSettlementLabel ? (
+                      <p className="mt-0.5 text-xs text-muted">
+                        Населений пункт: <span className="text-foreground">{o.npSettlementLabel}</span>
+                      </p>
+                    ) : null}
+                    {o.npWarehouseLabel ? (
+                      <p className="mt-0.5 text-xs text-muted">
+                        Відділення НП: <span className="text-foreground">{o.npWarehouseLabel}</span>
+                      </p>
+                    ) : null}
+                    {o.addressNote ? (
+                      <p className="mt-0.5 text-xs text-muted">
+                        Доставка: <span className="text-foreground">{o.addressNote}</span>
+                      </p>
+                    ) : null}
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{o.description}</p>
+                    {o.details ? (
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
+                        <span className="font-medium text-foreground">Додатково: </span>
+                        {o.details}
+                      </p>
+                    ) : null}
+                  </div>
+                  {o.photoUrls.length > 0 ? (
+                    <div className="shrink-0">
+                      <OrderPhotoStrip urls={o.photoUrls} />
+                    </div>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -236,10 +247,7 @@ export default function OrdersCatalogPage() {
                   ? formatDateTime((o.completedAt as { toDate: () => Date }).toDate())
                   : null;
               return (
-                <li
-                  key={o.id}
-                  className="rounded-lg border border-border bg-card/80 px-4 py-3 text-sm"
-                >
+                <li key={o.id} className="rounded-lg border border-border bg-card/80 px-4 py-3 text-sm">
                   <div className="mb-1 flex justify-end">
                     <Link
                       href={`/dashboard/orders/${o.id}`}
@@ -248,9 +256,18 @@ export default function OrdersCatalogPage() {
                       Картка →
                     </Link>
                   </div>
-                  <span className="font-medium text-foreground tabular-nums">{o.number}</span>
-                  {o.title ? <span className="text-muted"> — {o.title}</span> : null}
-                  {closed ? <span className="ml-2 text-muted">· {closed}</span> : null}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-foreground tabular-nums">{o.number}</span>
+                      {o.title ? <span className="text-muted"> — {o.title}</span> : null}
+                      {closed ? <span className="ml-2 text-muted">· {closed}</span> : null}
+                    </div>
+                    {o.photoUrls.length > 0 ? (
+                      <div className="shrink-0">
+                        <OrderPhotoStrip urls={o.photoUrls} />
+                      </div>
+                    ) : null}
+                  </div>
                 </li>
               );
             })}

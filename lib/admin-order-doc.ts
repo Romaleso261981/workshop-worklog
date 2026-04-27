@@ -17,4 +17,6 @@ export type AdminOrderDoc = {
   npWarehouseRef?: string | null;
   npWarehouseLabel?: string | null;
   addressNote?: string | null;
+  /** URL зображень у Firebase Storage (необов’язково). */
+  photoUrls?: string[] | null;
 };

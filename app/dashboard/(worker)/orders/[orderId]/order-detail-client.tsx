@@ -4,7 +4,9 @@ import { useAuth } from "@/components/auth-provider";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
+import { OrderPhotoStrip } from "@/components/order-photo-strip";
 import { formatDateTime } from "@/lib/format";
+import { normalizeOrderPhotoUrls } from "@/lib/order-photos";
 import {
   formatPurchaseMoney,
   materialCategoryLabel,
@@ -43,6 +45,7 @@ type OrderView = {
   npSettlementLabel: string | null;
   npWarehouseLabel: string | null;
   addressNote: string | null;
+  photoUrls: string[];
 };
 
 type IssuedRow = {
@@ -127,6 +130,7 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
         npSettlementLabel: (x.npSettlementLabel as string | null) ?? null,
         npWarehouseLabel: (x.npWarehouseLabel as string | null) ?? null,
         addressNote: (x.addressNote as string | null) ?? null,
+        photoUrls: normalizeOrderPhotoUrls(x.photoUrls),
       });
     } catch (e) {
       setOrder(null);
@@ -392,6 +396,15 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
           <div>
             <p className="text-sm font-medium text-foreground">Додатково</p>
             <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{order.details}</p>
+          </div>
+        ) : null}
+        {order.photoUrls.length > 0 ? (
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="text-sm font-medium text-foreground">Фото</p>
+            <p className="mt-1 text-xs text-muted">Натисніть мініатюру, щоб переглянути на весь екран.</p>
+            <div className="mt-2">
+              <OrderPhotoStrip urls={order.photoUrls} />
+            </div>
           </div>
         ) : null}
       </section>

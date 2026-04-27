@@ -2,9 +2,11 @@
 
 import { MaterialMoneyInput } from "@/components/material-money-input";
 import { OrderNpDeliveryFields } from "@/components/order-np-delivery-fields";
+import { OrderPhotosEditor, type OrderPhotosEditorHandle } from "@/components/order-photos-editor";
 import type { AdminOrderDoc } from "@/lib/admin-order-doc";
 import { ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { formatDateTime } from "@/lib/format";
+import { forwardRef } from "react";
 
 type Props = {
   mode: "add" | "edit";
@@ -17,16 +19,10 @@ type Props = {
   onCompleteProduction?: () => void;
 };
 
-export function AdminOrderForm({
-  mode,
-  draft,
-  formInstanceId,
-  error,
-  pending,
-  onSubmit,
-  onCancel,
-  onCompleteProduction,
-}: Props) {
+export const AdminOrderForm = forwardRef<OrderPhotosEditorHandle, Props>(function AdminOrderForm(
+  { mode, draft, formInstanceId, error, pending, onSubmit, onCancel, onCompleteProduction },
+  ref,
+) {
   const moneyPrefill = {
     amount: draft?.totalCost ?? null,
     currency: draft?.totalCurrency ?? null,
@@ -155,6 +151,13 @@ export function AdminOrderForm({
         initialWarehouseLabel={draft?.npWarehouseLabel}
       />
 
+      <OrderPhotosEditor
+        ref={ref}
+        resetKey={formInstanceId}
+        initialUrls={draft?.photoUrls}
+        disabled={pending}
+      />
+
       <div>
         <label className="mb-1 block text-sm font-medium" htmlFor="addressNote">
           Додатково до адреси (вулиця, під’їзд, коментар для кур’єра)
@@ -199,4 +202,6 @@ export function AdminOrderForm({
       </div>
     </form>
   );
-}
+});
+
+AdminOrderForm.displayName = "AdminOrderForm";

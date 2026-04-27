@@ -1,6 +1,8 @@
 "use client";
 
 import { AdminOrderForm } from "@/components/admin-order-form";
+import { OrderPhotoStrip } from "@/components/order-photo-strip";
+import type { OrderPhotosEditorHandle } from "@/components/order-photos-editor";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import type { AdminOrderDoc } from "@/lib/admin-order-doc";
 import { orderPayloadFromForm } from "@/lib/admin-order-payload";
@@ -9,6 +11,7 @@ import { COL } from "@/lib/firestore/collections";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { formatDateTime } from "@/lib/format";
 import { formatPurchaseMoney, parseMoneyAmountInput } from "@/lib/material-categories";
+import { normalizeOrderPhotoUrls } from "@/lib/order-photos";
 import {
   addDoc,
   collection,
@@ -19,9 +22,10 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export default function AdminOrdersPage() {
+  const photoFlushRef = useRef<OrderPhotosEditorHandle>(null);
   const [active, setActive] = useState<AdminOrderDoc[]>([]);
   const [done, setDone] = useState<AdminOrderDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +76,7 @@ export default function AdminOrdersPage() {
           npWarehouseRef?: string | null;
           npWarehouseLabel?: string | null;
           addressNote?: string | null;
+          photoUrls?: unknown;
         };
         const tc =
           typeof x.totalCost === "number" && Number.isFinite(x.totalCost)
@@ -97,6 +102,7 @@ export default function AdminOrdersPage() {
           npWarehouseRef: x.npWarehouseRef ?? null,
           npWarehouseLabel: x.npWarehouseLabel ?? null,
           addressNote: x.addressNote ?? null,
+          photoUrls: normalizeOrderPhotoUrls(x.photoUrls),
         };
       });
       setActive(
@@ -185,16 +191,37 @@ export default function AdminOrdersPage() {
         }
 
         if (formMode === "edit" && editingId) {
+          let photoUrls: string[] = [];
+          try {
+            photoUrls = (await photoFlushRef.current?.flush(editingId)) ?? [];
+          } catch {
+            setError("Не вдалося оновити фото в Storage. Перевірте правила Storage і bucket.");
+            return;
+          }
           await updateDoc(doc(db, COL.orders, editingId), {
             ...payload,
+            photoUrls,
             updatedAt: serverTimestamp(),
           });
         } else {
-          await addDoc(collection(db, COL.orders), {
+          const docRef = await addDoc(collection(db, COL.orders), {
             ...payload,
+            photoUrls: [],
             status: ORDER_IN_PRODUCTION,
             createdAt: serverTimestamp(),
           });
+          let photoUrls: string[] = [];
+          try {
+            photoUrls = (await photoFlushRef.current?.flush(docRef.id)) ?? [];
+          } catch {
+            setError(
+              "Замовлення створено, але фото не завантажились (Storage). Відкрийте замовлення й додайте фото знову або перевірте правила Storage.",
+            );
+            await load();
+            closeForm();
+            return;
+          }
+          await updateDoc(docRef, { photoUrls });
         }
         await load();
         closeForm();
@@ -286,6 +313,7 @@ export default function AdminOrdersPage() {
             onMouseDown={(ev) => ev.stopPropagation()}
           >
             <AdminOrderForm
+              ref={photoFlushRef}
               mode={formMode}
               draft={formMode === "edit" ? draft : null}
               formInstanceId={formInstanceId}
@@ -325,7 +353,8 @@ export default function AdminOrdersPage() {
                   formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
                 }`}
               >
-                <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
                   <p className="font-semibold">
                     <span className="tabular-nums">{o.number}</span>
                     {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
@@ -348,6 +377,16 @@ export default function AdminOrdersPage() {
                       ? formatDateTime((o.createdAt as { toDate: () => Date }).toDate())
                       : "—"}
                   </p>
+                  </div>
+                  {o.photoUrls && o.photoUrls.length > 0 ? (
+                    <div
+                      className="shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <OrderPhotoStrip urls={o.photoUrls} />
+                    </div>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -379,9 +418,22 @@ export default function AdminOrdersPage() {
                     formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
                   }`}
                 >
-                  <span className="font-medium text-foreground tabular-nums">{o.number}</span>
-                  {o.title ? ` — ${o.title}` : ""}
-                  {meta.length ? <span className="mt-1 block text-xs">{meta.join(" · ")}</span> : null}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-foreground tabular-nums">{o.number}</span>
+                      {o.title ? ` — ${o.title}` : ""}
+                      {meta.length ? <span className="mt-1 block text-xs">{meta.join(" · ")}</span> : null}
+                    </div>
+                    {o.photoUrls && o.photoUrls.length > 0 ? (
+                      <div
+                        className="shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <OrderPhotoStrip urls={o.photoUrls} />
+                      </div>
+                    ) : null}
+                  </div>
                 </li>
               );
             })}
