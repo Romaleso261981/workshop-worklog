@@ -1,17 +1,14 @@
 "use client";
 
+import { AdminOrderForm } from "@/components/admin-order-form";
 import { getFirebaseDb } from "@/lib/firebase/client";
+import type { AdminOrderDoc } from "@/lib/admin-order-doc";
+import { orderPayloadFromForm } from "@/lib/admin-order-payload";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
-import { MaterialMoneyInput } from "@/components/material-money-input";
-import { OrderNpDeliveryFields } from "@/components/order-np-delivery-fields";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { formatDateTime } from "@/lib/format";
-import {
-  coercePurchaseCurrency,
-  formatPurchaseMoney,
-  parseMoneyAmountInput,
-} from "@/lib/material-categories";
+import { formatPurchaseMoney, parseMoneyAmountInput } from "@/lib/material-categories";
 import {
   addDoc,
   collection,
@@ -24,69 +21,14 @@ import {
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type OrderDoc = {
-  id: string;
-  number: string;
-  title: string | null;
-  description: string;
-  details: string | null;
-  status: string;
-  createdAt?: unknown;
-  completedAt?: unknown;
-  /** Для кого замовлення (кого «варимо») */
-  orderFor?: string | null;
-  /** Що виготовляємо */
-  orderSubject?: string | null;
-  totalCost?: number | null;
-  totalCurrency?: string | null;
-  npSettlementRef?: string | null;
-  npSettlementLabel?: string | null;
-  npWarehouseRef?: string | null;
-  npWarehouseLabel?: string | null;
-  addressNote?: string | null;
-};
-
-function orderPayloadFromForm(fd: FormData) {
-  const number = String(fd.get("number") ?? "").trim();
-  const title = String(fd.get("title") ?? "").trim();
-  const description = String(fd.get("description") ?? "").trim();
-  const details = String(fd.get("details") ?? "").trim();
-  const orderFor = String(fd.get("orderFor") ?? "").trim();
-  const orderSubject = String(fd.get("orderSubject") ?? "").trim();
-  const totalCost = parseMoneyAmountInput(String(fd.get("totalCost") ?? ""));
-  const totalCurrency = coercePurchaseCurrency(fd.get("totalCurrency"));
-  const npSettlementRef = String(fd.get("npSettlementRef") ?? "").trim() || null;
-  const npSettlementLabel = String(fd.get("npSettlementLabel") ?? "").trim() || null;
-  const npWarehouseRef = String(fd.get("npWarehouseRef") ?? "").trim() || null;
-  const npWarehouseLabel = String(fd.get("npWarehouseLabel") ?? "").trim() || null;
-  const addressNote = String(fd.get("addressNote") ?? "").trim() || null;
-
-  return {
-    number,
-    title: title || null,
-    description,
-    details: details || null,
-    orderFor: orderFor || null,
-    orderSubject: orderSubject || null,
-    totalCost: totalCost ?? null,
-    totalCurrency: totalCost != null ? totalCurrency : null,
-    npSettlementRef,
-    npSettlementLabel,
-    npWarehouseRef,
-    npWarehouseLabel,
-    addressNote,
-  };
-}
-
 export default function AdminOrdersPage() {
-  const [active, setActive] = useState<OrderDoc[]>([]);
-  const [done, setDone] = useState<OrderDoc[]>([]);
+  const [active, setActive] = useState<AdminOrderDoc[]>([]);
+  const [done, setDone] = useState<AdminOrderDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState<"add" | "edit">("add");
+  const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formInstanceId, setFormInstanceId] = useState(0);
 
@@ -94,14 +36,6 @@ export default function AdminOrdersPage() {
   const draft = useMemo(
     () => (editingId ? allOrders.find((o) => o.id === editingId) ?? null : null),
     [allOrders, editingId],
-  );
-
-  const moneyPrefill = useMemo(
-    () => ({
-      amount: draft?.totalCost ?? null,
-      currency: draft?.totalCurrency ?? null,
-    }),
-    [draft],
   );
 
   const load = useCallback(async () => {
@@ -120,7 +54,7 @@ export default function AdminOrdersPage() {
         }
         return 0;
       }
-      const all: OrderDoc[] = snap.docs.map((d) => {
+      const all: AdminOrderDoc[] = snap.docs.map((d) => {
         const x = d.data() as {
           number?: string;
           title?: string | null;
@@ -191,30 +125,43 @@ export default function AdminOrdersPage() {
     void load();
   }, [load]);
 
-  function closeForm() {
-    setFormOpen(false);
+  const closeForm = useCallback(() => {
+    setFormMode(null);
     setEditingId(null);
     setError(null);
-  }
+  }, []);
+
+  useEffect(() => {
+    if (formMode === null) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") closeForm();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [formMode, closeForm]);
 
   function openAdd() {
     setFormMode("add");
     setEditingId(null);
     setFormInstanceId((i) => i + 1);
-    setFormOpen(true);
     setError(null);
   }
 
-  function openEdit(o: OrderDoc) {
+  function openEdit(o: AdminOrderDoc) {
     setFormMode("edit");
     setEditingId(o.id);
     setFormInstanceId((i) => i + 1);
-    setFormOpen(true);
     setError(null);
   }
 
   function saveOrder(fd: FormData) {
     setError(null);
+    if (!formMode) return;
     const payload = orderPayloadFromForm(fd);
     if (!payload.number || !payload.description) {
       setError("Номер і опис обов’язкові.");
@@ -228,7 +175,10 @@ export default function AdminOrdersPage() {
         const dupSnap = await getDocs(
           query(collection(db, COL.orders), where("number", "==", payload.number)),
         );
-        const conflict = dupSnap.docs.filter((d) => d.id !== editingId);
+        const conflict =
+          formMode === "edit" && editingId
+            ? dupSnap.docs.filter((d) => d.id !== editingId)
+            : dupSnap.docs;
         if (conflict.length > 0) {
           setError("Такий номер замовлення уже існує.");
           return;
@@ -273,7 +223,7 @@ export default function AdminOrdersPage() {
     })();
   }
 
-  function orderMetaLines(o: OrderDoc) {
+  function orderMetaLines(o: AdminOrderDoc) {
     const lines: string[] = [];
     if (o.status === ORDER_DONE && o.completedAt) {
       const closed =
@@ -295,8 +245,11 @@ export default function AdminOrdersPage() {
     return lines;
   }
 
+  const listScrollClass =
+    "max-h-[min(58vh,36rem)] overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-card/30 py-1 pr-1";
+
   return (
-    <div className="space-y-10">
+    <div className="flex min-h-0 flex-1 flex-col space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Замовлення (керування)</h1>
@@ -306,194 +259,56 @@ export default function AdminOrdersPage() {
             </p>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (formOpen) closeForm();
-            else openAdd();
-          }}
-          className="shrink-0 self-start rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90 sm:self-auto"
-        >
-          {formOpen ? "Закрити" : "Додати замовлення"}
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => (formMode ? closeForm() : openAdd())}
+            className="rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:opacity-90"
+          >
+            {formMode ? "Закрити" : "Додати замовлення"}
+          </button>
+        </div>
       </div>
 
-      {formOpen ? (
-        <form
-          key={formInstanceId}
-          onSubmit={(ev) => {
-            ev.preventDefault();
-            saveOrder(new FormData(ev.currentTarget));
+      {formMode !== null ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-10 sm:items-center sm:pt-4"
+          role="presentation"
+          onMouseDown={(ev) => {
+            if (ev.target === ev.currentTarget) closeForm();
           }}
-          className="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm"
         >
-          <h2 className="text-lg font-semibold text-foreground">
-            {formMode === "edit" ? "Редагування замовлення" : "Нове замовлення"}
-          </h2>
-
-          {formMode === "edit" && draft?.createdAt ? (
-            <p className="rounded-lg border border-border bg-accent-soft/40 px-3 py-2 text-sm text-muted">
-              Дата створення в системі:{" "}
-              {typeof draft.createdAt === "object" &&
-              draft.createdAt &&
-              "toDate" in draft.createdAt &&
-              typeof (draft.createdAt as { toDate: () => Date }).toDate === "function"
-                ? formatDateTime((draft.createdAt as { toDate: () => Date }).toDate())
-                : "—"}
-            </p>
-          ) : null}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="number">
-                Номер *
-              </label>
-              <input
-                id="number"
-                name="number"
-                required
-                defaultValue={draft?.number ?? ""}
-                className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="title">
-                Коротка назва
-              </label>
-              <input
-                id="title"
-                name="title"
-                defaultValue={draft?.title ?? ""}
-                className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="orderFor">
-                Для кого (замовник)
-              </label>
-              <input
-                id="orderFor"
-                name="orderFor"
-                defaultValue={draft?.orderFor ?? ""}
-                className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-                placeholder="Назва клієнта / організації"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium" htmlFor="orderSubject">
-                Що виготовляємо
-              </label>
-              <input
-                id="orderSubject"
-                name="orderSubject"
-                defaultValue={draft?.orderSubject ?? ""}
-                className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-                placeholder="Коротко про виріб / роботу"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium" htmlFor="description">
-              Опис *
-            </label>
-            <textarea
-              id="description"
-              name="description"
-              required
-              rows={4}
-              defaultValue={draft?.description ?? ""}
-              className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
+          <div
+            className="relative max-h-[min(90vh,52rem)] w-full max-w-3xl overflow-y-auto shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={formMode === "add" ? "Нове замовлення" : "Редагування замовлення"}
+            onMouseDown={(ev) => ev.stopPropagation()}
+          >
+            <AdminOrderForm
+              mode={formMode}
+              draft={formMode === "edit" ? draft : null}
+              formInstanceId={formInstanceId}
+              error={error}
+              pending={pending}
+              onSubmit={saveOrder}
+              onCancel={closeForm}
+              onCompleteProduction={
+                formMode === "edit" && editingId ? () => completeOrder(editingId) : undefined
+              }
             />
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium" htmlFor="details">
-              Додаткові дані
-            </label>
-            <textarea
-              id="details"
-              name="details"
-              rows={3}
-              defaultValue={draft?.details ?? ""}
-              className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-            />
-          </div>
-
-          <MaterialMoneyInput
-            idPrefix="order-total"
-            resetKey={formInstanceId}
-            initialAmount={moneyPrefill.amount}
-            initialCurrency={moneyPrefill.currency}
-            amountFieldName="totalCost"
-            currencyFieldName="totalCurrency"
-            label="Загальна вартість замовлення"
-          />
-
-          <OrderNpDeliveryFields
-            resetKey={formInstanceId}
-            hideManualApiHint
-            initialSettlementRef={draft?.npSettlementRef}
-            initialSettlementLabel={draft?.npSettlementLabel}
-            initialWarehouseRef={draft?.npWarehouseRef}
-            initialWarehouseLabel={draft?.npWarehouseLabel}
-          />
-
-          <div>
-            <label className="mb-1 block text-sm font-medium" htmlFor="addressNote">
-              Додатково до адреси (вулиця, під’їзд, коментар для кур’єра)
-            </label>
-            <textarea
-              id="addressNote"
-              name="addressNote"
-              rows={2}
-              defaultValue={draft?.addressNote ?? ""}
-              placeholder="Вулиця, будинок, поверх, коментар…"
-              className="w-full rounded-lg border border-border px-3 py-2 outline-none ring-accent focus:ring-2"
-            />
-          </div>
-
-          {error ? <p className="text-sm text-red-700">{error}</p> : null}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
-            >
-              {pending ? "…" : formMode === "edit" ? "Зберегти зміни" : "Додати в виробництво"}
-            </button>
-            {formMode === "edit" && editingId && draft?.status === ORDER_IN_PRODUCTION ? (
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => completeOrder(editingId)}
-                className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
-              >
-                Зняти з виробництва
-              </button>
-            ) : null}
-            <button
-              type="button"
-              disabled={pending}
-              onClick={closeForm}
-              className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
-            >
-              Скасувати
-            </button>
-          </div>
-        </form>
+        </div>
       ) : null}
 
-      <section className="space-y-3">
+      <section className="flex min-h-0 flex-col space-y-3">
         <h2 className="text-lg font-semibold">У виробництві ({active.length})</h2>
         {active.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
             Немає активних замовлень.
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className={`space-y-3 ${listScrollClass}`}>
             {active.map((o) => (
               <li
                 key={o.id}
@@ -507,7 +322,7 @@ export default function AdminOrdersPage() {
                   }
                 }}
                 className={`cursor-pointer rounded-xl border border-border bg-card p-4 shadow-sm transition hover:bg-accent-soft/50 ${
-                  formOpen && formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
+                  formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
                 }`}
               >
                 <div>
@@ -529,9 +344,7 @@ export default function AdminOrdersPage() {
                   ) : null}
                   <p className="mt-2 text-xs text-muted">
                     Створено:{" "}
-                    {o.createdAt &&
-                    typeof o.createdAt === "object" &&
-                    "toDate" in o.createdAt
+                    {o.createdAt && typeof o.createdAt === "object" && "toDate" in o.createdAt
                       ? formatDateTime((o.createdAt as { toDate: () => Date }).toDate())
                       : "—"}
                   </p>
@@ -542,12 +355,12 @@ export default function AdminOrdersPage() {
         )}
       </section>
 
-      <section className="space-y-3">
+      <section className="flex min-h-0 flex-col space-y-3">
         <h2 className="text-lg font-semibold">Архів ({done.length})</h2>
         {done.length === 0 ? (
           <p className="text-sm text-muted">Поки порожньо.</p>
         ) : (
-          <ul className="space-y-2 text-sm text-muted">
+          <ul className={`space-y-2 text-sm text-muted ${listScrollClass}`}>
             {done.map((o) => {
               const meta = orderMetaLines(o);
               return (
@@ -563,7 +376,7 @@ export default function AdminOrdersPage() {
                     }
                   }}
                   className={`cursor-pointer rounded-lg border border-border px-4 py-2 transition hover:bg-accent-soft/50 ${
-                    formOpen && formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
+                    formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
                   }`}
                 >
                   <span className="font-medium text-foreground tabular-nums">{o.number}</span>
