@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/format";
 import { OrderPhotoStrip } from "@/components/order-photo-strip";
 import { formatPurchaseMoney, parseMoneyAmountInput } from "@/lib/material-categories";
 import { normalizeOrderPhotoUrls } from "@/lib/order-photos";
+import { completedStagesFromEntries, nextOpenStageId, normalizePhase, stageLabel } from "@/lib/pipeline";
 import { collection, getDocs } from "firebase/firestore";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -31,26 +32,57 @@ type OrderRow = {
   photoUrls: string[];
 };
 
+type OrderProgress =
+  | { kind: "in_work"; stageLabel: string; workers: string[] }
+  | { kind: "waiting"; stageLabel: string };
+
 export default function OrdersCatalogPage() {
   const { user } = useAuth();
   const [active, setActive] = useState<OrderRow[]>([]);
   const [done, setDone] = useState<OrderRow[]>([]);
   const [managerCount, setManagerCount] = useState(0);
+  const [progressByOrder, setProgressByOrder] = useState<Record<string, OrderProgress>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
     try {
       const db = getFirebaseDb();
-      const [ordSnap, userSnap] = await Promise.all([
+      const [ordSnap, userSnap, entriesSnap] = await Promise.all([
         getDocs(collection(db, COL.orders)),
         getDocs(collection(db, COL.users)),
+        getDocs(collection(db, COL.workEntries)),
       ]);
       const managers = userSnap.docs.filter((d) => {
         const r = (d.data() as { role?: string }).role;
         return r === "ADMIN" || r === "OWNER";
       }).length;
       setManagerCount(managers);
+      const workerLabelByUid = Object.fromEntries(
+        userSnap.docs.map((d) => {
+          const u = d.data() as { displayName?: string; email?: string };
+          const label = (u.displayName ?? "").trim() || (u.email ?? "").trim() || d.id;
+          return [d.id, label];
+        }),
+      );
+
+      const entriesByOrder = new Map<
+        string,
+        { phase: string; endedAt?: unknown; userId?: string }[]
+      >();
+      for (const d of entriesSnap.docs) {
+        const x = d.data() as { orderId?: string; phase?: string; endedAt?: unknown; userId?: string };
+        const orderId = String(x.orderId ?? "").trim();
+        if (!orderId) continue;
+        const row = {
+          phase: String(x.phase ?? ""),
+          endedAt: x.endedAt,
+          userId: typeof x.userId === "string" ? x.userId : "",
+        };
+        const list = entriesByOrder.get(orderId);
+        if (list) list.push(row);
+        else entriesByOrder.set(orderId, [row]);
+      }
 
       const all: OrderRow[] = ordSnap.docs.map((d) => {
         const x = d.data() as {
@@ -93,34 +125,61 @@ export default function OrdersCatalogPage() {
           photoUrls: normalizeOrderPhotoUrls(x.photoUrls),
         };
       });
-    setActive(
-      all
-        .filter((o) => o.status === ORDER_IN_PRODUCTION)
-        .sort((a, b) => a.number.localeCompare(b.number)),
-    );
-    const doneList = all
-      .filter((o) => o.status === ORDER_DONE)
-      .sort((a, b) => {
-        const ta =
-          a.completedAt &&
-          typeof a.completedAt === "object" &&
-          "toMillis" in (a.completedAt as object)
-            ? (a.completedAt as { toMillis: () => number }).toMillis()
-            : 0;
-        const tb =
-          b.completedAt &&
-          typeof b.completedAt === "object" &&
-          "toMillis" in (b.completedAt as object)
-            ? (b.completedAt as { toMillis: () => number }).toMillis()
-            : 0;
-        if (tb !== ta) return tb - ta;
-        return b.number.localeCompare(a.number, "uk", { numeric: true });
-      });
+      setActive(
+        all
+          .filter((o) => o.status === ORDER_IN_PRODUCTION)
+          .sort((a, b) => a.number.localeCompare(b.number)),
+      );
+      const doneList = all
+        .filter((o) => o.status === ORDER_DONE)
+        .sort((a, b) => {
+          const ta =
+            a.completedAt &&
+            typeof a.completedAt === "object" &&
+            "toMillis" in (a.completedAt as object)
+              ? (a.completedAt as { toMillis: () => number }).toMillis()
+              : 0;
+          const tb =
+            b.completedAt &&
+            typeof b.completedAt === "object" &&
+            "toMillis" in (b.completedAt as object)
+              ? (b.completedAt as { toMillis: () => number }).toMillis()
+              : 0;
+          if (tb !== ta) return tb - ta;
+          return b.number.localeCompare(a.number, "uk", { numeric: true });
+        });
       setDone(doneList);
+
+      const progress: Record<string, OrderProgress> = {};
+      for (const o of all) {
+        if (o.status !== ORDER_IN_PRODUCTION) continue;
+        const rows = entriesByOrder.get(o.id) ?? [];
+        const inWork = rows.filter((r) => !r.endedAt);
+        if (inWork.length > 0) {
+          const stage = stageLabel(inWork[0].phase);
+          const workers = Array.from(
+            new Set(
+              inWork.map((r) => workerLabelByUid[r.userId ?? ""] ?? (r.userId ? `${r.userId.slice(0, 8)}…` : "—")),
+            ),
+          );
+          progress[o.id] = { kind: "in_work", stageLabel: stage, workers };
+          continue;
+        }
+        const doneSet = completedStagesFromEntries(
+          rows.map((r) => ({ phase: normalizePhase(r.phase), endedAt: r.endedAt })),
+        );
+        const nextStage = nextOpenStageId(doneSet);
+        progress[o.id] = {
+          kind: "waiting",
+          stageLabel: nextStage ? stageLabel(nextStage) : "Фінальний контроль",
+        };
+      }
+      setProgressByOrder(progress);
     } catch (e) {
       setActive([]);
       setDone([]);
       setManagerCount(0);
+      setProgressByOrder({});
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити замовлення.");
     }
   }, []);
@@ -210,6 +269,16 @@ export default function OrdersCatalogPage() {
                     {o.addressNote ? (
                       <p className="mt-0.5 text-xs text-muted">
                         Доставка: <span className="text-foreground">{o.addressNote}</span>
+                      </p>
+                    ) : null}
+                    {progressByOrder[o.id]?.kind === "in_work" ? (
+                      <p className="mt-1 text-xs text-emerald-800">
+                        В роботі: <span className="font-medium">{progressByOrder[o.id].stageLabel}</span> · Виконує:{" "}
+                        <span className="font-medium">{progressByOrder[o.id].workers.join(", ")}</span>
+                      </p>
+                    ) : progressByOrder[o.id]?.kind === "waiting" ? (
+                      <p className="mt-1 text-xs text-amber-900">
+                        Очікує етап: <span className="font-medium">{progressByOrder[o.id].stageLabel}</span>. Наразі ніхто не виконує роботи.
                       </p>
                     ) : null}
                     <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{o.description}</p>

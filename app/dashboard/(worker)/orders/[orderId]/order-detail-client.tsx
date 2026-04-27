@@ -283,31 +283,14 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
     const statusText =
       order.status === ORDER_DONE ? "Завершено" : order.status === ORDER_IN_PRODUCTION ? "У виробництві" : order.status;
 
-    const detailsRows = workLog
-      .map((row) => {
-        const start = fmtDateForExport(row.startedAt);
-        const end = fmtDateForExport(row.endedAt);
-        const notes = row.notesPreview ? escHtml(row.notesPreview) : "—";
-        return `<tr><td>${escHtml(row.phaseLabel)}</td><td>${escHtml(row.userLabel)}</td><td>${escHtml(
-          `${start} → ${end === "—" ? "…" : end}`,
-        )}</td><td>${notes}</td></tr>`;
-      })
-      .join("");
-
-    const issuesRows = issues
-      .map((row) => {
-        const when = fmtDateForExport(row.createdAt);
-        const by = row.addedByEmail ? row.addedByEmail : row.addedByUid ? `id: ${row.addedByUid.slice(0, 8)}…` : "—";
-        return `<tr><td>${escHtml(row.materialName)}</td><td>${escHtml(
-          materialCategoryLabel(row.materialCategory),
-        )}</td><td>${escHtml(String(row.quantity))}</td><td>${escHtml(when)}</td><td>${escHtml(by)}</td></tr>`;
-      })
-      .join("");
-
-    const photos = order.photoUrls
+    const photosPages = order.photoUrls
       .map(
-        (u, i) =>
-          `<div class="photo"><img src="${escHtml(u)}" alt="photo-${i + 1}" /><p>Фото ${i + 1}</p></div>`,
+        (u, i) => `<section class="photo-page">
+          <div class="photo-wrap">
+            <img src="${escHtml(u)}" alt="photo-${i + 1}" />
+          </div>
+          <p class="photo-caption">Фото ${i + 1} / ${order.photoUrls.length}</p>
+        </section>`,
       )
       .join("");
 
@@ -321,72 +304,78 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
     h1,h2 { margin: 0 0 8px; }
     .meta p { margin: 3px 0; }
     .section { margin-top: 18px; page-break-inside: avoid; }
+    .first-page { min-height: 260mm; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
     th, td { border: 1px solid #ddd; padding: 6px; vertical-align: top; text-align: left; }
     th { background: #f6f6f6; }
     .pre { white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; border-radius: 6px; }
-    .photos { display: flex; flex-wrap: wrap; gap: 10px; }
-    .photo { width: 160px; }
-    .photo img { width: 100%; height: 120px; object-fit: cover; border:1px solid #ddd; border-radius: 6px; }
     .hint { margin-top: 14px; color: #555; font-size: 12px; }
+    .page-break { page-break-before: always; break-before: page; }
+    .photo-page { page-break-before: always; break-before: page; min-height: 260mm; display:flex; flex-direction:column; }
+    .photo-wrap { flex:1; display:flex; align-items:center; justify-content:center; }
+    .photo-wrap img { max-width: 100%; max-height: 240mm; object-fit: contain; border:1px solid #ddd; border-radius: 6px; }
+    .photo-caption { margin-top: 8px; text-align:center; font-size: 12px; color:#444; }
   </style>
 </head>
 <body>
-  <h1>Замовлення ${escHtml(order.number)}${order.title ? ` — ${escHtml(order.title)}` : ""}</h1>
-  <div class="meta">
-    <p><b>Статус:</b> ${escHtml(statusText)}</p>
-    <p><b>Для кого:</b> ${escHtml(order.orderFor ?? "—")}</p>
-    <p><b>Що виготовляємо:</b> ${escHtml(order.orderSubject ?? "—")}</p>
-    <p><b>Вартість:</b> ${escHtml(money)}</p>
-    <p><b>Населений пункт:</b> ${escHtml(order.npSettlementLabel ?? "—")}</p>
-    <p><b>Відділення НП:</b> ${escHtml(order.npWarehouseLabel ?? "—")}</p>
-    <p><b>Доставка:</b> ${escHtml(order.addressNote ?? "—")}</p>
-  </div>
+  <section class="first-page">
+    <h1>Замовлення ${escHtml(order.number)}${order.title ? ` — ${escHtml(order.title)}` : ""}</h1>
+    <div class="meta">
+      <p><b>Статус:</b> ${escHtml(statusText)}</p>
+      <p><b>Для кого:</b> ${escHtml(order.orderFor ?? "—")}</p>
+      <p><b>Що виготовляємо:</b> ${escHtml(order.orderSubject ?? "—")}</p>
+      <p><b>Вартість:</b> ${escHtml(money)}</p>
+      <p><b>Населений пункт:</b> ${escHtml(order.npSettlementLabel ?? "—")}</p>
+      <p><b>Відділення НП:</b> ${escHtml(order.npWarehouseLabel ?? "—")}</p>
+      <p><b>Доставка:</b> ${escHtml(order.addressNote ?? "—")}</p>
+    </div>
 
-  <div class="section">
-    <h2>Опис</h2>
-    <div class="pre">${escHtml(order.description)}</div>
-  </div>
-  ${
-    order.details
-      ? `<div class="section"><h2>Додатково</h2><div class="pre">${escHtml(order.details)}</div></div>`
-      : ""
-  }
-  ${
-    order.photoUrls.length
-      ? `<div class="section"><h2>Фото</h2><div class="photos">${photos}</div></div>`
-      : ""
-  }
+    <div class="section">
+      <h2>Опис</h2>
+      <div class="pre">${escHtml(order.description)}</div>
+    </div>
+    ${
+      order.details
+        ? `<div class="section"><h2>Додатково</h2><div class="pre">${escHtml(order.details)}</div></div>`
+        : ""
+    }
+    <p class="hint">Сторінка 1: загальна інформація. Далі друкуються фото по одному на сторінку.</p>
+  </section>
 
-  <div class="section">
-    <h2>Деталі / етапи</h2>
-    <table>
-      <thead><tr><th>Етап</th><th>Працівник</th><th>Час</th><th>Нотатки</th></tr></thead>
-      <tbody>${detailsRows || '<tr><td colspan="4">Немає записів</td></tr>'}</tbody>
-    </table>
-  </div>
-
-  <div class="section">
-    <h2>Матеріали по замовленню</h2>
-    <table>
-      <thead><tr><th>Матеріал</th><th>Категорія</th><th>Кількість</th><th>Коли</th><th>Хто</th></tr></thead>
-      <tbody>${issuesRows || '<tr><td colspan="5">Немає записів</td></tr>'}</tbody>
-    </table>
-  </div>
-
-  <p class="hint">Після відкриття вікна оберіть у діалозі друку «Save as PDF / Зберегти як PDF».</p>
+  ${photosPages || `<section class="photo-page"><p style="margin:auto;text-align:center;color:#666">Фото відсутні</p></section>`}
 </body></html>`;
 
-    const w = window.open("", "_blank", "noopener,noreferrer");
-    if (!w) {
-      setFormError("Браузер заблокував нове вікно. Дозвольте pop-up для сайту.");
-      return;
+    try {
+      const w = window.open("", "_blank");
+      if (!w) {
+        setFormError("Браузер заблокував нове вікно. Дозвольте pop-up для сайту.");
+        return;
+      }
+      w.document.open();
+      w.document.write(
+        html.replace(
+          "</body>",
+          `<div style="position:fixed;right:16px;bottom:16px;z-index:9999">
+             <button onclick="window.print()" style="padding:8px 12px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer">
+               Друк / Зберегти PDF
+             </button>
+           </div></body>`,
+        ),
+      );
+      w.document.close();
+      w.focus();
+      w.onload = () => {
+        setTimeout(() => {
+          try {
+            w.print();
+          } catch {
+            /* користувач натисне кнопку вручну */
+          }
+        }, 450);
+      };
+    } catch {
+      setFormError("Не вдалося сформувати PDF у новій вкладці.");
     }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 250);
   }, [order, workLog, issues]);
 
   async function onAdd(ev: React.FormEvent) {
