@@ -222,7 +222,9 @@ export default function OrdersCatalogPage() {
           </p>
         ) : (
           <ul className="space-y-3">
-            {active.map((o) => (
+            {active.map((o) => {
+              const progress = progressByOrder[o.id];
+              return (
               <li key={o.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
                   <Link
@@ -271,14 +273,14 @@ export default function OrdersCatalogPage() {
                         Доставка: <span className="text-foreground">{o.addressNote}</span>
                       </p>
                     ) : null}
-                    {progressByOrder[o.id]?.kind === "in_work" ? (
+                    {progress?.kind === "in_work" ? (
                       <p className="mt-1 text-xs text-emerald-800">
-                        В роботі: <span className="font-medium">{progressByOrder[o.id].stageLabel}</span> · Виконує:{" "}
-                        <span className="font-medium">{progressByOrder[o.id].workers.join(", ")}</span>
+                        В роботі: <span className="font-medium">{progress.stageLabel}</span> · Виконує:{" "}
+                        <span className="font-medium">{progress.workers.join(", ")}</span>
                       </p>
-                    ) : progressByOrder[o.id]?.kind === "waiting" ? (
+                    ) : progress?.kind === "waiting" ? (
                       <p className="mt-1 text-xs text-amber-900">
-                        Очікує етап: <span className="font-medium">{progressByOrder[o.id].stageLabel}</span>. Наразі ніхто не виконує роботи.
+                        Очікує етап: <span className="font-medium">{progress.stageLabel}</span>. Наразі ніхто не виконує роботи.
                       </p>
                     ) : null}
                     <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{o.description}</p>
@@ -296,7 +298,8 @@ export default function OrdersCatalogPage() {
                   ) : null}
                 </div>
               </li>
-            ))}
+            );
+            })}
           </ul>
         )}
       </section>
