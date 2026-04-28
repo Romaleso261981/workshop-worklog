@@ -26,11 +26,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export default function AdminOrdersPage() {
+  const ORDERS_PAGE_SIZE = 4;
   const photoFlushRef = useRef<OrderPhotosEditorHandle>(null);
   const [active, setActive] = useState<AdminOrderDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [page, setPage] = useState(0);
 
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -104,6 +106,10 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [active.length]);
 
   const closeForm = useCallback(() => {
     setFormMode(null);
@@ -246,8 +252,12 @@ export default function AdminOrdersPage() {
     return lines;
   }
 
-  const listScrollClass =
-    "max-h-[min(58vh,36rem)] overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-card/30 py-1 pr-1";
+  const totalPages = Math.max(1, Math.ceil(active.length / ORDERS_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const visibleOrders = active.slice(
+    safePage * ORDERS_PAGE_SIZE,
+    safePage * ORDERS_PAGE_SIZE + ORDERS_PAGE_SIZE,
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-8">
@@ -316,8 +326,9 @@ export default function AdminOrdersPage() {
             Немає активних замовлень.
           </p>
         ) : (
-          <ul className={`space-y-3 ${listScrollClass}`}>
-            {active.map((o) => (
+          <>
+          <ul className="space-y-3 rounded-xl border border-border bg-card/30 p-2">
+            {visibleOrders.map((o) => (
               <li
                 key={o.id}
                 role="button"
@@ -371,6 +382,35 @@ export default function AdminOrdersPage() {
               </li>
             ))}
           </ul>
+          {totalPages > 1 ? (
+            <nav
+              className="flex flex-wrap items-center justify-center gap-3 border-t border-border pt-4"
+              aria-label="Сторінки замовлень"
+            >
+              <button
+                type="button"
+                disabled={safePage === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Попередня
+              </button>
+              <span className="text-sm text-muted">
+                Сторінка <span className="font-medium tabular-nums text-foreground">{safePage + 1}</span> з{" "}
+                <span className="tabular-nums">{totalPages}</span>
+                <span className="ml-2 text-xs">(по {ORDERS_PAGE_SIZE} замовлення)</span>
+              </span>
+              <button
+                type="button"
+                disabled={safePage >= totalPages - 1}
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Наступна
+              </button>
+            </nav>
+          ) : null}
+          </>
         )}
       </section>
     </div>
