@@ -15,6 +15,20 @@ import { doc, getDocs, collection, updateDoc, serverTimestamp } from "firebase/f
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type ArchivePeriodMode = "year" | "month" | "custom";
+
+function completedAtDate(v: unknown): Date | null {
+  if (
+    v &&
+    typeof v === "object" &&
+    "toDate" in v &&
+    typeof (v as { toDate: () => Date }).toDate === "function"
+  ) {
+    return (v as { toDate: () => Date }).toDate();
+  }
+  return null;
+}
+
 export default function AdminOrdersArchivePage() {
   const photoFlushRef = useRef<OrderPhotosEditorHandle>(null);
   const [done, setDone] = useState<AdminOrderDoc[]>([]);
@@ -24,6 +38,11 @@ export default function AdminOrdersArchivePage() {
   const [formMode, setFormMode] = useState<"edit" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formInstanceId, setFormInstanceId] = useState(0);
+  const [periodMode, setPeriodMode] = useState<ArchivePeriodMode>("year");
+  const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
+  const [monthFilter, setMonthFilter] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const draft = useMemo(() => (editingId ? done.find((o) => o.id === editingId) ?? null : null), [done, editingId]);
 
@@ -177,6 +196,42 @@ export default function AdminOrdersArchivePage() {
     return lines;
   }
 
+  const yearOptions = useMemo(() => {
+    const years = new Set<number>();
+    for (const o of done) {
+      const d = completedAtDate(o.completedAt);
+      if (d) years.add(d.getFullYear());
+    }
+    years.add(new Date().getFullYear());
+    return Array.from(years).sort((a, b) => b - a);
+  }, [done]);
+
+  useEffect(() => {
+    if (yearOptions.length === 0) return;
+    if (!yearOptions.includes(yearFilter)) {
+      setYearFilter(yearOptions[0]);
+    }
+  }, [yearOptions, yearFilter]);
+
+  const filteredDone = useMemo(() => {
+    const startCustom = customFrom ? new Date(`${customFrom}T00:00:00`) : null;
+    const endCustom = customTo ? new Date(`${customTo}T23:59:59.999`) : null;
+    return done.filter((o) => {
+      const d = completedAtDate(o.completedAt);
+      if (!d) return false;
+      if (periodMode === "year") {
+        return d.getFullYear() === yearFilter;
+      }
+      if (periodMode === "month") {
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        return monthKey === monthFilter;
+      }
+      if (startCustom && d < startCustom) return false;
+      if (endCustom && d > endCustom) return false;
+      return true;
+    });
+  }, [done, periodMode, yearFilter, monthFilter, customFrom, customTo]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -230,12 +285,95 @@ export default function AdminOrdersArchivePage() {
       ) : null}
 
       <section className="flex min-h-0 flex-col space-y-3">
-        <h2 className="text-lg font-semibold">Архів ({done.length})</h2>
-        {done.length === 0 ? (
+        <h2 className="text-lg font-semibold">Аналітика архіву</h2>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted" htmlFor="archive-period-mode">
+                Режим періоду
+              </label>
+              <select
+                id="archive-period-mode"
+                value={periodMode}
+                onChange={(e) => setPeriodMode(e.target.value as ArchivePeriodMode)}
+                className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+              >
+                <option value="year">За рік</option>
+                <option value="month">За місяць</option>
+                <option value="custom">Власний період</option>
+              </select>
+            </div>
+            {periodMode === "year" ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted" htmlFor="archive-year-filter">
+                  Рік
+                </label>
+                <select
+                  id="archive-year-filter"
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(Number(e.target.value))}
+                  className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : periodMode === "month" ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted" htmlFor="archive-month-filter">
+                  Місяць
+                </label>
+                <input
+                  id="archive-month-filter"
+                  type="month"
+                  value={monthFilter}
+                  onChange={(e) => setMonthFilter(e.target.value)}
+                  className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-muted" htmlFor="archive-from">
+                    Від
+                  </label>
+                  <input
+                    id="archive-from"
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted" htmlFor="archive-to">
+                    До
+                  </label>
+                  <input
+                    id="archive-to"
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+        </div>
+      </section>
+
+      <section className="flex min-h-0 flex-col space-y-3">
+        <h2 className="text-lg font-semibold">Архів ({filteredDone.length})</h2>
+        {filteredDone.length === 0 ? (
           <p className="text-sm text-muted">Поки порожньо.</p>
         ) : (
           <ul className="max-h-[min(58vh,36rem)] space-y-2 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-card/30 py-1 pr-1 text-sm text-muted">
-            {done.map((o) => {
+            {filteredDone.map((o) => {
               const meta = orderMetaLines(o);
               return (
                 <li
