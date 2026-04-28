@@ -250,6 +250,24 @@ export default function AdminOrdersPage() {
     })();
   }
 
+  function returnToProduction(orderId: string) {
+    void (async () => {
+      setPending(true);
+      try {
+        const db = getFirebaseDb();
+        await updateDoc(doc(db, COL.orders, orderId), {
+          status: ORDER_IN_PRODUCTION,
+          completedAt: null,
+          updatedAt: serverTimestamp(),
+        });
+        if (editingId === orderId) closeForm();
+        await load();
+      } finally {
+        setPending(false);
+      }
+    })();
+  }
+
   function orderMetaLines(o: AdminOrderDoc) {
     const lines: string[] = [];
     if (o.status === ORDER_DONE && o.completedAt) {
@@ -323,6 +341,9 @@ export default function AdminOrdersPage() {
               onCancel={closeForm}
               onCompleteProduction={
                 formMode === "edit" && editingId ? () => completeOrder(editingId) : undefined
+              }
+              onReturnToProduction={
+                formMode === "edit" && editingId ? () => returnToProduction(editingId) : undefined
               }
             />
           </div>

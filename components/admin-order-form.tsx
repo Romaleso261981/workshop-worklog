@@ -17,10 +17,11 @@ type Props = {
   onSubmit: (fd: FormData) => void;
   onCancel: () => void;
   onCompleteProduction?: () => void;
+  onReturnToProduction?: () => void;
 };
 
 export const AdminOrderForm = forwardRef<OrderPhotosEditorHandle, Props>(function AdminOrderForm(
-  { mode, draft, formInstanceId, error, pending, onSubmit, onCancel, onCompleteProduction },
+  { mode, draft, formInstanceId, error, pending, onSubmit, onCancel, onCompleteProduction, onReturnToProduction },
   ref,
 ) {
   const moneyPrefill = {
@@ -193,6 +194,16 @@ export const AdminOrderForm = forwardRef<OrderPhotosEditorHandle, Props>(functio
             className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
           >
             Зняти з виробництва
+          </button>
+        ) : null}
+        {mode === "edit" && draft?.id && draft.status !== ORDER_IN_PRODUCTION && onReturnToProduction ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onReturnToProduction}
+            className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
+          >
+            Повернути у виробництво
           </button>
         ) : null}
         <button
