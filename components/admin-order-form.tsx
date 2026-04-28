@@ -18,10 +18,22 @@ type Props = {
   onCancel: () => void;
   onCompleteProduction?: () => void;
   onReturnToProduction?: () => void;
+  hidePrimarySubmit?: boolean;
 };
 
 export const AdminOrderForm = forwardRef<OrderPhotosEditorHandle, Props>(function AdminOrderForm(
-  { mode, draft, formInstanceId, error, pending, onSubmit, onCancel, onCompleteProduction, onReturnToProduction },
+  {
+    mode,
+    draft,
+    formInstanceId,
+    error,
+    pending,
+    onSubmit,
+    onCancel,
+    onCompleteProduction,
+    onReturnToProduction,
+    hidePrimarySubmit,
+  },
   ref,
 ) {
   const moneyPrefill = {
@@ -179,13 +191,15 @@ export const AdminOrderForm = forwardRef<OrderPhotosEditorHandle, Props>(functio
 
       {error ? <p className="text-sm text-red-700">{error}</p> : null}
       <div className="flex flex-wrap gap-2">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
-        >
-          {pending ? "…" : mode === "edit" ? "Зберегти зміни" : "Додати в виробництво"}
-        </button>
+        {hidePrimarySubmit ? null : (
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-zinc-50 disabled:opacity-60"
+          >
+            {pending ? "…" : mode === "edit" ? "Зберегти зміни" : "Додати в виробництво"}
+          </button>
+        )}
         {mode === "edit" && draft?.id && draft.status === ORDER_IN_PRODUCTION && onCompleteProduction ? (
           <button
             type="button"

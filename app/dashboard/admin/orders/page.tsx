@@ -22,12 +22,12 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export default function AdminOrdersPage() {
   const photoFlushRef = useRef<OrderPhotosEditorHandle>(null);
   const [active, setActive] = useState<AdminOrderDoc[]>([]);
-  const [done, setDone] = useState<AdminOrderDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -36,28 +36,13 @@ export default function AdminOrdersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formInstanceId, setFormInstanceId] = useState(0);
 
-  const allOrders = useMemo(() => [...active, ...done], [active, done]);
-  const draft = useMemo(
-    () => (editingId ? allOrders.find((o) => o.id === editingId) ?? null : null),
-    [allOrders, editingId],
-  );
+  const draft = useMemo(() => (editingId ? active.find((o) => o.id === editingId) ?? null : null), [active, editingId]);
 
   const load = useCallback(async () => {
     setLoadError(null);
     try {
       const db = getFirebaseDb();
       const snap = await getDocs(collection(db, COL.orders));
-      function completedAtMillis(c: unknown): number {
-        if (
-          c &&
-          typeof c === "object" &&
-          "toMillis" in c &&
-          typeof (c as { toMillis: () => number }).toMillis === "function"
-        ) {
-          return (c as { toMillis: () => number }).toMillis();
-        }
-        return 0;
-      }
       const all: AdminOrderDoc[] = snap.docs.map((d) => {
         const x = d.data() as {
           number?: string;
@@ -110,19 +95,8 @@ export default function AdminOrdersPage() {
           .filter((o) => o.status === ORDER_IN_PRODUCTION)
           .sort((a, b) => a.number.localeCompare(b.number)),
       );
-      setDone(
-        all
-          .filter((o) => o.status === ORDER_DONE)
-          .sort((a, b) => {
-            const ta = completedAtMillis(a.completedAt);
-            const tb = completedAtMillis(b.completedAt);
-            if (tb !== ta) return tb - ta;
-            return b.number.localeCompare(a.number, "uk", { numeric: true });
-          }),
-      );
     } catch (e) {
       setActive([]);
-      setDone([]);
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити замовлення.");
     }
   }, []);
@@ -250,24 +224,6 @@ export default function AdminOrdersPage() {
     })();
   }
 
-  function returnToProduction(orderId: string) {
-    void (async () => {
-      setPending(true);
-      try {
-        const db = getFirebaseDb();
-        await updateDoc(doc(db, COL.orders, orderId), {
-          status: ORDER_IN_PRODUCTION,
-          completedAt: null,
-          updatedAt: serverTimestamp(),
-        });
-        if (editingId === orderId) closeForm();
-        await load();
-      } finally {
-        setPending(false);
-      }
-    })();
-  }
-
   function orderMetaLines(o: AdminOrderDoc) {
     const lines: string[] = [];
     if (o.status === ORDER_DONE && o.completedAt) {
@@ -305,6 +261,12 @@ export default function AdminOrdersPage() {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-auto">
+          <Link
+            href="/dashboard/admin/orders/archive"
+            className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-zinc-50"
+          >
+            Архів
+          </Link>
           <button
             type="button"
             onClick={() => (formMode ? closeForm() : openAdd())}
@@ -341,9 +303,6 @@ export default function AdminOrdersPage() {
               onCancel={closeForm}
               onCompleteProduction={
                 formMode === "edit" && editingId ? () => completeOrder(editingId) : undefined
-              }
-              onReturnToProduction={
-                formMode === "edit" && editingId ? () => returnToProduction(editingId) : undefined
               }
             />
           </div>
@@ -411,53 +370,6 @@ export default function AdminOrdersPage() {
                 </div>
               </li>
             ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="flex min-h-0 flex-col space-y-3">
-        <h2 className="text-lg font-semibold">Архів ({done.length})</h2>
-        {done.length === 0 ? (
-          <p className="text-sm text-muted">Поки порожньо.</p>
-        ) : (
-          <ul className={`space-y-2 text-sm text-muted ${listScrollClass}`}>
-            {done.map((o) => {
-              const meta = orderMetaLines(o);
-              return (
-                <li
-                  key={o.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openEdit(o)}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter" || ev.key === " ") {
-                      ev.preventDefault();
-                      openEdit(o);
-                    }
-                  }}
-                  className={`cursor-pointer rounded-lg border border-border px-4 py-2 transition hover:bg-accent-soft/50 ${
-                    formMode === "edit" && editingId === o.id ? "bg-accent-soft/40 ring-1 ring-inset ring-accent/30" : ""
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <span className="font-medium text-foreground tabular-nums">{o.number}</span>
-                      {o.title ? ` — ${o.title}` : ""}
-                      {meta.length ? <span className="mt-1 block text-xs">{meta.join(" · ")}</span> : null}
-                    </div>
-                    {o.photoUrls && o.photoUrls.length > 0 ? (
-                      <div
-                        className="shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <OrderPhotoStrip urls={o.photoUrls} />
-                      </div>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
           </ul>
         )}
       </section>

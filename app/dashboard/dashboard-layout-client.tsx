@@ -124,6 +124,9 @@ export function DashboardLayoutClient({
                 <Link href="/dashboard/admin/orders" className={`${navLink} text-accent`}>
                   Замовлення
                 </Link>
+                <Link href="/dashboard/admin/orders/archive" className={navLink}>
+                  Архів
+                </Link>
                 <Link href="/dashboard/admin/materials" className={`${navLink} text-accent`}>
                   Матеріали
                 </Link>
