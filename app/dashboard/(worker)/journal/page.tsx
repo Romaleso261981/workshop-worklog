@@ -7,6 +7,8 @@ import { COL } from "@/lib/firestore/collections";
 import { WorkJournalPagination, WORK_JOURNAL_PAGE_SIZE } from "@/components/work-journal-pagination";
 import type { JournalOrderSource } from "@/lib/work-journal-orders";
 import { journalOrdersFromEntries } from "@/lib/work-journal-orders";
+import { completedStagesFromEntries, nextOpenStageId, stageLabel } from "@/lib/pipeline";
+import { ORDER_DONE } from "@/lib/order-status";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -20,6 +22,7 @@ export default function JournalPage() {
   const { user } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [ordersById, setOrdersById] = useState<Record<string, JournalOrderSource>>({});
+  const [progressByOrder, setProgressByOrder] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
 
@@ -31,11 +34,12 @@ export default function JournalPage() {
     setLoadError(null);
     try {
       const db = getFirebaseDb();
-      const [weSnap, ordSnap] = await Promise.all([
+      const [weSnap, ordSnap, allEntriesSnap] = await Promise.all([
         getDocs(
           query(collection(db, COL.workEntries), where("userId", "==", user.uid)),
         ),
         getDocs(collection(db, COL.orders)),
+        getDocs(collection(db, COL.workEntries)),
       ]);
     const orderJournalById: Record<string, JournalOrderSource> = Object.fromEntries(
       ordSnap.docs.map((d) => {
@@ -87,11 +91,45 @@ export default function JournalPage() {
       return tb - ta;
     });
 
+    const progressRowsByOrder = new Map<string, { phase: string; endedAt: unknown }[]>();
+    for (const d of allEntriesSnap.docs) {
+      const x = d.data() as { orderId?: string; phase?: string; endedAt?: unknown };
+      const orderId = String(x.orderId ?? "").trim();
+      if (!orderId) continue;
+      const row = { phase: String(x.phase ?? ""), endedAt: x.endedAt ?? null };
+      const arr = progressRowsByOrder.get(orderId);
+      if (arr) arr.push(row);
+      else progressRowsByOrder.set(orderId, [row]);
+    }
+
+    const progressTextByOrder: Record<string, string> = {};
+    for (const row of list) {
+      const orderId = row.orderId?.trim();
+      if (!orderId) continue;
+      const order = orderJournalById[orderId];
+      if (!order) continue;
+      if ((order.status ?? "") === ORDER_DONE) {
+        progressTextByOrder[orderId] = "Завершено";
+        continue;
+      }
+      const entries = progressRowsByOrder.get(orderId) ?? [];
+      const inWork = entries.find((e) => e.endedAt == null);
+      if (inWork) {
+        progressTextByOrder[orderId] = `В роботі: ${stageLabel(inWork.phase)}`;
+        continue;
+      }
+      const done = completedStagesFromEntries(entries);
+      const next = nextOpenStageId(done);
+      progressTextByOrder[orderId] = next ? `Очікує етап: ${stageLabel(next)}` : "Завершено";
+    }
+
     setRows(list);
     setOrdersById(orderJournalById);
+    setProgressByOrder(progressTextByOrder);
     } catch (e) {
       setRows([]);
       setOrdersById({});
+      setProgressByOrder({});
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити журнал.");
     }
   }, [user]);
@@ -145,8 +183,7 @@ export default function JournalPage() {
                       Замовлення <span className="tabular-nums">{o.number}</span>
                     </p>
                     <p className="mt-2 text-xs text-muted">
-                      Статус:{" "}
-                      {o.inProduction ? <span className="text-amber-800">У виробництві</span> : <span className="text-foreground">Завершено</span>}
+                      Етап: <span className="text-foreground">{progressByOrder[o.orderId] ?? (o.inProduction ? "У виробництві" : "Завершено")}</span>
                     </p>
                   </div>
                   <Link
