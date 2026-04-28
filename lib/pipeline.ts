@@ -1,6 +1,6 @@
 /** Canonical production stages in strict order (per order). */
 export const PIPELINE_STAGES = [
-  { id: "CLEAN", label: "Прибирання" },
+  { id: "CLEAN", label: "Комплектування та зварювання" },
   { id: "PAINT", label: "Фарбування" },
   { id: "PREP", label: "Підготовка" },
   { id: "PACK", label: "Упаковка" },
@@ -15,7 +15,7 @@ export const PIPELINE_LAST_STAGE_ID: StageId = PIPELINE_STAGES[PIPELINE_STAGES.l
 const LEGACY_PHASE: Record<string, StageId | string> = {
   PREPARATION: "PREP",
   PAINTING: "PAINT",
-  /** Старий перший етап → новий «Прибирання» */
+  /** Старий перший етап → новий «Комплектування та зварювання» */
   STOCK: "CLEAN",
   /** Старий «Грунт» рахуємо як підготовку для сумісності з існуючими записами */
   PRIMER: "PREP",
