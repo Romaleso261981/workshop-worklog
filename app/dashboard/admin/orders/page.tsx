@@ -25,6 +25,20 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type OrdersPeriodMode = "year" | "month" | "custom";
+
+function createdAtDate(v: unknown): Date | null {
+  if (
+    v &&
+    typeof v === "object" &&
+    "toDate" in v &&
+    typeof (v as { toDate: () => Date }).toDate === "function"
+  ) {
+    return (v as { toDate: () => Date }).toDate();
+  }
+  return null;
+}
+
 export default function AdminOrdersPage() {
   const ORDERS_PAGE_SIZE = 4;
   const photoFlushRef = useRef<OrderPhotosEditorHandle>(null);
@@ -33,6 +47,11 @@ export default function AdminOrdersPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [page, setPage] = useState(0);
+  const [periodMode, setPeriodMode] = useState<OrdersPeriodMode>("year");
+  const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
+  const [monthFilter, setMonthFilter] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -253,8 +272,43 @@ export default function AdminOrdersPage() {
   }
 
   const totalPages = Math.max(1, Math.ceil(active.length / ORDERS_PAGE_SIZE));
-  const safePage = Math.min(page, totalPages - 1);
-  const visibleOrders = active.slice(
+  const yearOptions = useMemo(() => {
+    const years = new Set<number>();
+    for (const o of active) {
+      const d = createdAtDate(o.createdAt);
+      if (d) years.add(d.getFullYear());
+    }
+    years.add(new Date().getFullYear());
+    return Array.from(years).sort((a, b) => b - a);
+  }, [active]);
+
+  useEffect(() => {
+    if (yearOptions.length === 0) return;
+    if (!yearOptions.includes(yearFilter)) {
+      setYearFilter(yearOptions[0]);
+    }
+  }, [yearOptions, yearFilter]);
+
+  const filteredActive = useMemo(() => {
+    const startCustom = customFrom ? new Date(`${customFrom}T00:00:00`) : null;
+    const endCustom = customTo ? new Date(`${customTo}T23:59:59.999`) : null;
+    return active.filter((o) => {
+      const d = createdAtDate(o.createdAt);
+      if (!d) return false;
+      if (periodMode === "year") return d.getFullYear() === yearFilter;
+      if (periodMode === "month") {
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        return monthKey === monthFilter;
+      }
+      if (startCustom && d < startCustom) return false;
+      if (endCustom && d > endCustom) return false;
+      return true;
+    });
+  }, [active, periodMode, yearFilter, monthFilter, customFrom, customTo]);
+
+  const filteredTotalPages = Math.max(1, Math.ceil(filteredActive.length / ORDERS_PAGE_SIZE));
+  const safePage = Math.min(page, filteredTotalPages - 1);
+  const visibleOrders = filteredActive.slice(
     safePage * ORDERS_PAGE_SIZE,
     safePage * ORDERS_PAGE_SIZE + ORDERS_PAGE_SIZE,
   );
@@ -320,8 +374,90 @@ export default function AdminOrdersPage() {
       ) : null}
 
       <section className="flex min-h-0 flex-col space-y-3">
-        <h2 className="text-lg font-semibold">У виробництві ({active.length})</h2>
-        {active.length === 0 ? (
+        <h2 className="text-lg font-semibold">Фільтр періоду</h2>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted" htmlFor="orders-period-mode">
+                Режим періоду
+              </label>
+              <select
+                id="orders-period-mode"
+                value={periodMode}
+                onChange={(e) => setPeriodMode(e.target.value as OrdersPeriodMode)}
+                className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+              >
+                <option value="year">За рік</option>
+                <option value="month">За місяць</option>
+                <option value="custom">Власний період</option>
+              </select>
+            </div>
+            {periodMode === "year" ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted" htmlFor="orders-year-filter">
+                  Рік
+                </label>
+                <select
+                  id="orders-year-filter"
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(Number(e.target.value))}
+                  className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : periodMode === "month" ? (
+              <div>
+                <label className="mb-1 block text-xs text-muted" htmlFor="orders-month-filter">
+                  Місяць
+                </label>
+                <input
+                  id="orders-month-filter"
+                  type="month"
+                  value={monthFilter}
+                  onChange={(e) => setMonthFilter(e.target.value)}
+                  className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-muted" htmlFor="orders-from">
+                    Від
+                  </label>
+                  <input
+                    id="orders-from"
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted" htmlFor="orders-to">
+                    До
+                  </label>
+                  <input
+                    id="orders-to"
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="flex min-h-0 flex-col space-y-3">
+        <h2 className="text-lg font-semibold">У виробництві ({filteredActive.length})</h2>
+        {filteredActive.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted">
             Немає активних замовлень.
           </p>
@@ -382,7 +518,7 @@ export default function AdminOrdersPage() {
               </li>
             ))}
           </ul>
-          {totalPages > 1 ? (
+          {filteredTotalPages > 1 ? (
             <nav
               className="flex flex-wrap items-center justify-center gap-3 border-t border-border pt-4"
               aria-label="Сторінки замовлень"
@@ -397,13 +533,13 @@ export default function AdminOrdersPage() {
               </button>
               <span className="text-sm text-muted">
                 Сторінка <span className="font-medium tabular-nums text-foreground">{safePage + 1}</span> з{" "}
-                <span className="tabular-nums">{totalPages}</span>
+                <span className="tabular-nums">{filteredTotalPages}</span>
                 <span className="ml-2 text-xs">(по {ORDERS_PAGE_SIZE} замовлення)</span>
               </span>
               <button
                 type="button"
-                disabled={safePage >= totalPages - 1}
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={safePage >= filteredTotalPages - 1}
+                onClick={() => setPage((p) => Math.min(filteredTotalPages - 1, p + 1))}
                 className="rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Наступна
