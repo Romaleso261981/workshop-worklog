@@ -7,13 +7,7 @@ import { COL } from "@/lib/firestore/collections";
 import { OrderPhotoStrip } from "@/components/order-photo-strip";
 import { formatDateTime } from "@/lib/format";
 import { normalizeOrderPhotoUrls } from "@/lib/order-photos";
-import {
-  formatPurchaseMoney,
-  materialCategoryLabel,
-  parseMaterialDoc,
-  parseMoneyAmountInput,
-  type MaterialListItem,
-} from "@/lib/material-categories";
+import { materialCategoryLabel, parseMaterialDoc, parseMoneyAmountInput, type MaterialListItem } from "@/lib/material-categories";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import { isPaintStage, stageLabel } from "@/lib/pipeline";
 import {
@@ -81,22 +75,6 @@ function parseQuantity(raw: string): number | null {
   const n = Number(s);
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
-}
-
-function fmtDateForExport(v: unknown): string {
-  if (v && typeof v === "object" && "toDate" in v && typeof (v as { toDate: () => Date }).toDate === "function") {
-    return formatDateTime((v as { toDate: () => Date }).toDate());
-  }
-  return "—";
-}
-
-function escHtml(v: string): string {
-  return v
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 export function OrderDetailClient({ orderId }: { orderId: string }) {
@@ -277,107 +255,6 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
     [materials, materialId],
   );
 
-  const exportPdf = useCallback(() => {
-    if (!order) return;
-    const money = formatPurchaseMoney(order.totalCost ?? undefined, order.totalCurrency ?? "UAH") ?? "—";
-    const statusText =
-      order.status === ORDER_DONE ? "Завершено" : order.status === ORDER_IN_PRODUCTION ? "У виробництві" : order.status;
-
-    const photosPages = order.photoUrls
-      .map(
-        (u, i) => `<section class="photo-page">
-          <div class="photo-wrap">
-            <img src="${escHtml(u)}" alt="photo-${i + 1}" />
-          </div>
-          <p class="photo-caption">Фото ${i + 1} / ${order.photoUrls.length}</p>
-        </section>`,
-      )
-      .join("");
-
-    const html = `<!doctype html>
-<html lang="uk">
-<head>
-  <meta charset="utf-8" />
-  <title>Замовлення ${escHtml(order.number)}</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 24px; color:#111; }
-    h1,h2 { margin: 0 0 8px; }
-    .meta p { margin: 3px 0; }
-    .section { margin-top: 18px; page-break-inside: avoid; }
-    .first-page { min-height: 260mm; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
-    th, td { border: 1px solid #ddd; padding: 6px; vertical-align: top; text-align: left; }
-    th { background: #f6f6f6; }
-    .pre { white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; border-radius: 6px; }
-    .hint { margin-top: 14px; color: #555; font-size: 12px; }
-    .page-break { page-break-before: always; break-before: page; }
-    .photo-page { page-break-before: always; break-before: page; min-height: 260mm; display:flex; flex-direction:column; }
-    .photo-wrap { flex:1; display:flex; align-items:center; justify-content:center; }
-    .photo-wrap img { max-width: 100%; max-height: 240mm; object-fit: contain; border:1px solid #ddd; border-radius: 6px; }
-    .photo-caption { margin-top: 8px; text-align:center; font-size: 12px; color:#444; }
-  </style>
-</head>
-<body>
-  <section class="first-page">
-    <h1>Замовлення ${escHtml(order.number)}${order.title ? ` — ${escHtml(order.title)}` : ""}</h1>
-    <div class="meta">
-      <p><b>Статус:</b> ${escHtml(statusText)}</p>
-      <p><b>Для кого:</b> ${escHtml(order.orderFor ?? "—")}</p>
-    <p><b>Телефон:</b> ${escHtml(order.clientPhonePrimary ?? "—")}</p>
-      <p><b>Вартість:</b> ${escHtml(money)}</p>
-      <p><b>Населений пункт:</b> ${escHtml(order.npSettlementLabel ?? "—")}</p>
-      <p><b>Відділення НП:</b> ${escHtml(order.npWarehouseLabel ?? "—")}</p>
-      <p><b>Доставка:</b> ${escHtml(order.addressNote ?? "—")}</p>
-    </div>
-
-    <div class="section">
-      <h2>Опис</h2>
-      <div class="pre">${escHtml(order.description)}</div>
-    </div>
-    ${
-      order.details
-        ? `<div class="section"><h2>Додатково</h2><div class="pre">${escHtml(order.details)}</div></div>`
-        : ""
-    }
-    <p class="hint">Сторінка 1: загальна інформація. Далі друкуються фото по одному на сторінку.</p>
-  </section>
-
-  ${photosPages || `<section class="photo-page"><p style="margin:auto;text-align:center;color:#666">Фото відсутні</p></section>`}
-</body></html>`;
-
-    try {
-      const w = window.open("", "_blank");
-      if (!w) {
-        setFormError("Браузер заблокував нове вікно. Дозвольте pop-up для сайту.");
-        return;
-      }
-      w.document.open();
-      w.document.write(
-        html.replace(
-          "</body>",
-          `<div style="position:fixed;right:16px;bottom:16px;z-index:9999">
-             <button onclick="window.print()" style="padding:8px 12px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer">
-               Друк / Зберегти PDF
-             </button>
-           </div></body>`,
-        ),
-      );
-      w.document.close();
-      w.focus();
-      w.onload = () => {
-        setTimeout(() => {
-          try {
-            w.print();
-          } catch {
-            /* користувач натисне кнопку вручну */
-          }
-        }, 450);
-      };
-    } catch {
-      setFormError("Не вдалося сформувати PDF у новій вкладці.");
-    }
-  }, [order, workLog, issues]);
-
   async function onAdd(ev: React.FormEvent) {
     ev.preventDefault();
     setFormError(null);
@@ -453,26 +330,14 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
     );
   }
 
-  const money = formatPurchaseMoney(order.totalCost ?? undefined, order.totalCurrency ?? "UAH");
-
   return (
     <div className="space-y-8">
       <div>
         <Link href="/dashboard/orders" className="text-sm font-medium text-accent hover:underline">
           ← Усі замовлення
         </Link>
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={exportPdf}
-            className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-zinc-50"
-          >
-            Завантажити PDF
-          </button>
-        </div>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
           <span className="tabular-nums">{order.number}</span>
-          {order.title ? <span className="ml-2 text-lg font-normal text-muted">— {order.title}</span> : null}
         </h1>
         <p className="mt-1 text-xs text-muted">
           Статус:{" "}
@@ -484,46 +349,7 @@ export function OrderDetailClient({ orderId }: { orderId: string }) {
 
       <section className="space-y-3 rounded-2xl border border-border bg-card p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-foreground">Загальна інформація</h2>
-        {order.orderFor ? (
-          <p className="text-sm text-muted">
-            Для кого: <span className="text-foreground">{order.orderFor}</span>
-          </p>
-        ) : null}
-        {order.clientPhonePrimary ? (
-          <p className="text-sm text-muted">
-            Телефон: <span className="text-foreground">{order.clientPhonePrimary}</span>
-          </p>
-        ) : null}
-        {money ? (
-          <p className="text-sm text-muted">
-            Вартість: <span className="text-foreground">{money}</span>
-          </p>
-        ) : null}
-        {order.npSettlementLabel ? (
-          <p className="text-sm text-muted">
-            Населений пункт: <span className="text-foreground">{order.npSettlementLabel}</span>
-          </p>
-        ) : null}
-        {order.npWarehouseLabel ? (
-          <p className="text-sm text-muted">
-            Відділення НП: <span className="text-foreground">{order.npWarehouseLabel}</span>
-          </p>
-        ) : null}
-        {order.addressNote ? (
-          <p className="text-sm text-muted">
-            Доставка: <span className="text-foreground">{order.addressNote}</span>
-          </p>
-        ) : null}
-        <div>
-          <p className="text-sm font-medium text-foreground">Опис</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{order.description}</p>
-        </div>
-        {order.details ? (
-          <div>
-            <p className="text-sm font-medium text-foreground">Додатково</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{order.details}</p>
-          </div>
-        ) : null}
+        <p className="text-sm text-muted">У картці працівника показано лише номер, статус/етап і фото.</p>
         {order.photoUrls.length > 0 ? (
           <div className="mt-4 border-t border-border pt-4">
             <p className="text-sm font-medium text-foreground">Фото</p>

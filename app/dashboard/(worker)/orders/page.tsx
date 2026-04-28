@@ -5,9 +5,8 @@ import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
-import { formatDateTime } from "@/lib/format";
 import { OrderPhotoStrip } from "@/components/order-photo-strip";
-import { formatPurchaseMoney, parseMoneyAmountInput } from "@/lib/material-categories";
+import { parseMoneyAmountInput } from "@/lib/material-categories";
 import { normalizeOrderPhotoUrls } from "@/lib/order-photos";
 import { completedStagesFromEntries, nextOpenStageId, normalizePhase, stageLabel } from "@/lib/pipeline";
 import { collection, getDocs } from "firebase/firestore";
@@ -238,41 +237,7 @@ export default function OrdersCatalogPage() {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-foreground">
                       <span className="tabular-nums">{o.number}</span>
-                      {o.title ? <span className="ml-2 text-sm font-normal text-muted">— {o.title}</span> : null}
                     </p>
-                    {o.orderFor ? (
-                      <p className="mt-1 text-xs text-muted">
-                        Для кого: <span className="text-foreground">{o.orderFor}</span>
-                      </p>
-                    ) : null}
-                    {o.clientPhonePrimary ? (
-                      <p className="mt-0.5 text-xs text-muted">
-                        Телефон: <span className="text-foreground">{o.clientPhonePrimary}</span>
-                      </p>
-                    ) : null}
-                    {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH") ? (
-                      <p className="mt-0.5 text-xs text-muted">
-                        Вартість:{" "}
-                        <span className="text-foreground">
-                          {formatPurchaseMoney(o.totalCost ?? undefined, o.totalCurrency ?? "UAH")}
-                        </span>
-                      </p>
-                    ) : null}
-                    {o.npSettlementLabel ? (
-                      <p className="mt-0.5 text-xs text-muted">
-                        Населений пункт: <span className="text-foreground">{o.npSettlementLabel}</span>
-                      </p>
-                    ) : null}
-                    {o.npWarehouseLabel ? (
-                      <p className="mt-0.5 text-xs text-muted">
-                        Відділення НП: <span className="text-foreground">{o.npWarehouseLabel}</span>
-                      </p>
-                    ) : null}
-                    {o.addressNote ? (
-                      <p className="mt-0.5 text-xs text-muted">
-                        Доставка: <span className="text-foreground">{o.addressNote}</span>
-                      </p>
-                    ) : null}
                     {progress?.kind === "in_work" ? (
                       <p className="mt-1 text-xs text-emerald-800">
                         В роботі: <span className="font-medium">{progress.stageLabel}</span> · Виконує:{" "}
@@ -281,13 +246,6 @@ export default function OrdersCatalogPage() {
                     ) : progress?.kind === "waiting" ? (
                       <p className="mt-1 text-xs text-amber-900">
                         Очікує етап: <span className="font-medium">{progress.stageLabel}</span>. Наразі ніхто не виконує роботи.
-                      </p>
-                    ) : null}
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{o.description}</p>
-                    {o.details ? (
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
-                        <span className="font-medium text-foreground">Додатково: </span>
-                        {o.details}
                       </p>
                     ) : null}
                   </div>
@@ -311,13 +269,6 @@ export default function OrdersCatalogPage() {
         ) : (
           <ul className="space-y-2">
             {done.map((o) => {
-              const closed =
-                o.completedAt &&
-                typeof o.completedAt === "object" &&
-                "toDate" in o.completedAt &&
-                typeof (o.completedAt as { toDate: () => Date }).toDate === "function"
-                  ? formatDateTime((o.completedAt as { toDate: () => Date }).toDate())
-                  : null;
               return (
                 <li key={o.id} className="rounded-lg border border-border bg-card/80 px-4 py-3 text-sm">
                   <div className="mb-1 flex justify-end">
@@ -331,8 +282,7 @@ export default function OrdersCatalogPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <span className="font-medium text-foreground tabular-nums">{o.number}</span>
-                      {o.title ? <span className="text-muted"> — {o.title}</span> : null}
-                      {closed ? <span className="ml-2 text-muted">· {closed}</span> : null}
+                      <span className="ml-2 text-muted">· Завершено</span>
                     </div>
                     {o.photoUrls.length > 0 ? (
                       <div className="shrink-0">

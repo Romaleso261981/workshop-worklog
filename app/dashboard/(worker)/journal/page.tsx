@@ -4,7 +4,6 @@ import { useAuth } from "@/components/auth-provider";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
-import { formatDateTime } from "@/lib/format";
 import { WorkJournalPagination, WORK_JOURNAL_PAGE_SIZE } from "@/components/work-journal-pagination";
 import type { JournalOrderSource } from "@/lib/work-journal-orders";
 import { journalOrdersFromEntries } from "@/lib/work-journal-orders";
@@ -138,42 +137,16 @@ export default function JournalPage() {
           </li>
         ) : (
           pagedOrders.map((o) => {
-            const created =
-              o.createdAt &&
-              typeof o.createdAt === "object" &&
-              "toDate" in o.createdAt &&
-              typeof (o.createdAt as { toDate: () => Date }).toDate === "function"
-                ? formatDateTime((o.createdAt as { toDate: () => Date }).toDate())
-                : "—";
-            const closed =
-              !o.inProduction &&
-              o.completedAt &&
-              typeof o.completedAt === "object" &&
-              "toDate" in o.completedAt &&
-              typeof (o.completedAt as { toDate: () => Date }).toDate === "function"
-                ? formatDateTime((o.completedAt as { toDate: () => Date }).toDate())
-                : null;
-
             return (
               <li key={o.orderId} className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-foreground">
                       Замовлення <span className="tabular-nums">{o.number}</span>
-                      {o.localityLabel !== "—" ? (
-                        <span className="ml-2 text-sm font-normal text-muted">· {o.localityLabel}</span>
-                      ) : null}
                     </p>
                     <p className="mt-2 text-xs text-muted">
-                      Створено: <span className="text-foreground">{created}</span>
-                      {" · "}
-                      {closed ? (
-                        <>
-                          Завершено: <span className="text-foreground">{closed}</span>
-                        </>
-                      ) : (
-                        <span className="text-amber-800">У виробництві</span>
-                      )}
+                      Статус:{" "}
+                      {o.inProduction ? <span className="text-amber-800">У виробництві</span> : <span className="text-foreground">Завершено</span>}
                     </p>
                   </div>
                   <Link
