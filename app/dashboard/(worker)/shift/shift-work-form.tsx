@@ -1,6 +1,7 @@
 "use client";
 
 import { startStageFirestore } from "@/lib/firestore/shift-ops";
+import { PIPELINE_STAGES } from "@/lib/pipeline";
 import type { WorkActionResult } from "@/lib/work-constants";
 import type { OrderSelectOption } from "@/lib/order-option";
 import Link from "next/link";
@@ -32,15 +33,31 @@ export function ShiftWorkForm({
 }) {
   const router = useRouter();
   const [orderId, setOrderId] = useState(orders[0]?.id ?? "");
+  const [stageFilter, setStageFilter] = useState<string>("ALL");
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<Row[]>([{ color: "", amount: "" }]);
   const [materials, setMaterials] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const filteredOrders = useMemo(() => {
+    if (stageFilter === "ALL") return orders;
+    return orders.filter((o) => o.nextStageId === stageFilter);
+  }, [orders, stageFilter]);
+
+  const countByStage = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const o of orders) {
+      const id = o.nextStageId ?? "";
+      if (!id) continue;
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  }, [orders]);
+
   const selected = useMemo(
-    () => orders.find((o) => o.id === orderId) ?? null,
-    [orders, orderId],
+    () => filteredOrders.find((o) => o.id === orderId) ?? null,
+    [filteredOrders, orderId],
   );
 
   const isPaint = selected?.nextStageId === "PAINT";
@@ -85,11 +102,14 @@ export function ShiftWorkForm({
   }
 
   useEffect(() => {
-    if (orders.length === 0) return;
-    if (!orders.some((o) => o.id === orderId)) {
-      setOrderId(orders[0].id);
+    if (filteredOrders.length === 0) {
+      setOrderId("");
+      return;
     }
-  }, [orders, orderId]);
+    if (!filteredOrders.some((o) => o.id === orderId)) {
+      setOrderId(filteredOrders[0].id);
+    }
+  }, [filteredOrders, orderId]);
 
   if (orders.length === 0) {
     return null;
@@ -101,30 +121,79 @@ export function ShiftWorkForm({
       className="max-w-xl space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm"
     >
       <div>
+        <label htmlFor="stageFilter" className="mb-1 block text-sm font-medium text-foreground">
+          Фільтр за етапом
+        </label>
+        <select
+          id="stageFilter"
+          value={stageFilter}
+          onChange={(e) => setStageFilter(e.target.value)}
+          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-foreground outline-none ring-accent focus:ring-2"
+        >
+          <option value="ALL">Усі етапи ({orders.length})</option>
+          {PIPELINE_STAGES.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label} ({countByStage[s.id] ?? 0})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
         <label htmlFor="orderId" className="mb-1 block text-sm font-medium text-foreground">
           Замовлення
         </label>
+        <p className="mb-2 text-xs text-muted">
+          Кількість виробів: <span className="font-medium tabular-nums text-foreground">{filteredOrders.length}</span>
+          {selected?.nextLabel ? (
+            <>
+              {" "}
+              · Етап: <span className="font-medium text-foreground">{selected.nextLabel}</span>
+            </>
+          ) : null}
+        </p>
         <select
           id="orderId"
           value={orderId}
           onChange={(e) => setOrderId(e.target.value)}
           required
+          disabled={filteredOrders.length === 0}
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-foreground outline-none ring-accent focus:ring-2"
         >
-          {orders.map((o) => (
+          {filteredOrders.map((o) => (
             <option key={o.id} value={o.id}>
               {orderLine(o)}
             </option>
           ))}
         </select>
-        <p className="mt-2 text-sm">
-          <Link
-            href={`/dashboard/orders/${orderId}`}
-            className="font-medium text-accent underline-offset-2 hover:underline"
-          >
-            Деталі замовлення та облік матеріалів →
-          </Link>
+        {filteredOrders.length === 0 ? (
+          <p className="mt-2 text-xs text-muted">Немає замовлень для вибраного етапу.</p>
+        ) : null}
+        <p className="mt-2 text-xs text-muted">
+          Внизу списку: <span className="font-medium tabular-nums text-foreground">{filteredOrders.length}</span>
+          {selected ? (
+            <>
+              {" "}
+              · Номер замовлення: <span className="font-medium tabular-nums text-foreground">{selected.number}</span>
+              {selected.nextLabel ? (
+                <>
+                  {" "}
+                  · Етап: <span className="font-medium text-foreground">{selected.nextLabel}</span>
+                </>
+              ) : null}
+            </>
+          ) : null}
         </p>
+        {orderId ? (
+          <p className="mt-2 text-sm">
+            <Link
+              href={`/dashboard/orders/${orderId}`}
+              className="font-medium text-accent underline-offset-2 hover:underline"
+            >
+              Деталі замовлення та облік матеріалів →
+            </Link>
+          </p>
+        ) : null}
       </div>
 
       {selected ? (
