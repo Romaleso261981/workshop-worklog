@@ -14,6 +14,10 @@ service cloud.firestore {
       return signedIn() && userDoc().role in ['ADMIN', 'OWNER'];
     }
 
+    function isEmployee() {
+      return signedIn() && userDoc().role == 'EMPLOYEE';
+    }
+
     /** Працівник може лише перевести замовлення в архів (DONE + completedAt), без інших змін полів. */
     function orderWorkerArchiveOnly() {
       let diff = request.resource.data.diff(resource.data);
@@ -21,6 +25,35 @@ service cloud.firestore {
         && resource.data.status == 'IN_PRODUCTION'
         && request.resource.data.status == 'DONE'
         && diff.addedKeys().union(diff.changedKeys()).union(diff.removedKeys()).hasOnly(['status', 'completedAt']);
+    }
+
+    /** Працівник може рухати картку kanban лише між етапами з аудитом переміщення. */
+    function orderWorkerBoardMoveOnly() {
+      let diff = request.resource.data.diff(resource.data);
+      let changed = diff.addedKeys().union(diff.changedKeys()).union(diff.removedKeys());
+      let before = resource.data.stageMoveHistory == null ? [] : resource.data.stageMoveHistory;
+      let after = request.resource.data.stageMoveHistory == null ? [] : request.resource.data.stageMoveHistory;
+      let last = after[after.size() - 1];
+      return isEmployee()
+        && changed.hasOnly(['status', 'boardStage', 'completedAt', 'updatedAt', 'stageMoveHistory'])
+        && request.resource.data.status == 'IN_PRODUCTION'
+        && request.resource.data.completedAt == null
+        && (
+          request.resource.data.boardStage == null
+          || request.resource.data.boardStage in ['PACK', 'CLEAN', 'PAINT', 'PREP']
+        )
+        && request.resource.data.updatedAt == request.time
+        && before is list
+        && after is list
+        && after.size() == before.size() + 1
+        && last is map
+        && last.actorUserId == request.auth.uid
+        && last.fromStage in ['NEW', 'PACK', 'CLEAN', 'PAINT', 'PREP']
+        && (
+          last.toStage == 'NEW'
+          || last.toStage in ['PACK', 'CLEAN', 'PAINT', 'PREP']
+        )
+        && last.movedAt is timestamp;
     }
 
     match /users/{uid} {
@@ -33,7 +66,7 @@ service cloud.firestore {
     match /orders/{id} {
       allow read: if signedIn();
       allow create, delete: if isManager();
-      allow update: if isManager() || orderWorkerArchiveOnly();
+      allow update: if isManager() || orderWorkerArchiveOnly() || orderWorkerBoardMoveOnly();
     }
 
     match /orders/{orderId}/issuedMaterials/{issueId} {

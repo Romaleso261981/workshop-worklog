@@ -4,16 +4,24 @@ import { useAuth } from "@/components/auth-provider";
 import { getFirebaseDb } from "@/lib/firebase/client";
 import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import { COL } from "@/lib/firestore/collections";
+import { moveOrderBoardStageFirestore } from "@/lib/firestore/shift-ops";
+import { SHIFT_KANBAN_COLUMN_IDS, SHIFT_KANBAN_STAGES, type ShiftKanbanColumnId } from "@/lib/kanban-stages";
 import { canManageOrders } from "@/lib/order-manager-role";
-import { ORDER_IN_PRODUCTION } from "@/lib/order-status";
-import {
-  completedStagesFromEntries,
-  nextOpenStageId,
-  stageLabel,
-} from "@/lib/pipeline";
+import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
+import { completedStagesFromEntries, nextOpenStageId, normalizePhase, stageLabel } from "@/lib/pipeline";
+import { DndContext, type DragEndEvent, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { collection, getDocs } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ShiftWorkForm, type OrderShiftMeta } from "./shift-work-form";
+
+type BoardColumnId = ShiftKanbanColumnId;
+type BoardOrder = {
+  id: string;
+  number: string;
+  title: string | null;
+  description: string;
+  status: string;
+  boardStage: string | null;
+};
 
 type WorkEntryRow = {
   id: string;
@@ -51,11 +59,15 @@ function previewNotes(text: string | null, max = 140): string | null {
 
 export function ShiftPageClient() {
   const { user, profile } = useAuth();
-  const [metas, setMetas] = useState<OrderShiftMeta[]>([]);
+  const [orders, setOrders] = useState<BoardOrder[]>([]);
+  const [workEntries, setWorkEntries] = useState<WorkEntryRow[]>([]);
   const [activeShifts, setActiveShifts] = useState<ActiveShiftRow[]>([]);
   const [workerStatuses, setWorkerStatuses] = useState<WorkerStatusRow[]>([]);
-  const [hasOpenShift, setHasOpenShift] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [movingOrderId, setMovingOrderId] = useState<string | null>(null);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -86,16 +98,17 @@ export function ShiftPageClient() {
             title?: string | null;
             description?: string;
             status?: string;
+            boardStage?: string | null;
           };
           return {
             id: d.id,
             number: x.number ?? "",
             title: x.title ?? null,
             description: x.description ?? "",
-            status: x.status,
+            status: x.status ?? ORDER_IN_PRODUCTION,
+            boardStage: typeof x.boardStage === "string" ? x.boardStage : null,
           };
         })
-        .filter((o) => o.status === ORDER_IN_PRODUCTION)
         .sort((a, b) => a.number.localeCompare(b.number));
 
       const orderTitleById = Object.fromEntries(orders.map((o) => [o.id, o.title]));
@@ -119,8 +132,7 @@ export function ShiftPageClient() {
           orderNumber: x.orderNumber ?? "",
         };
       });
-
-      setHasOpenShift(entries.some((e) => e.userId === user.uid && e.endedAt == null));
+      setWorkEntries(entries);
 
       if (isManager && uSnap) {
         const inProductionIds = new Set(orders.map((o) => o.id));
@@ -171,57 +183,121 @@ export function ShiftPageClient() {
         setWorkerStatuses([]);
       }
 
-      const meta: OrderShiftMeta[] = [];
-      for (const o of orders) {
-        const forOrder = entries.filter((e) => e.orderId === o.id);
-        const done = completedStagesFromEntries(
-          forOrder.map((e) => ({ phase: e.phase, endedAt: e.endedAt })),
-        );
-        const next = nextOpenStageId(done);
-        const open = forOrder.find((e) => e.endedAt == null);
-        meta.push({
-          id: o.id,
-          number: o.number,
-          title: o.title,
-          description: o.description,
-          nextStageId: next,
-          nextLabel: next ? stageLabel(next) : null,
-          allDone: next === null && !open,
-          blocked: !!open,
-          activePhaseLabel: open ? stageLabel(open.phase) : null,
-        });
-      }
-      setMetas(meta);
+      setOrders(orders);
     } catch (e) {
-      setMetas([]);
+      setOrders([]);
+      setWorkEntries([]);
       setActiveShifts([]);
       setWorkerStatuses([]);
-      setHasOpenShift(false);
       setLoadError(isFirestorePermissionDenied(e) ? UK_FIRESTORE_RULES_HINT : "Не вдалося завантажити дані зміни.");
     }
   }, [user, profile?.role]);
 
   useEffect(() => {
-    void load();
+    const timerId = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => {
+      window.clearTimeout(timerId);
+    };
   }, [load]);
 
-  const pickableOrders = useMemo(
-    () => metas.filter((m) => !m.blocked && m.nextStageId != null),
-    [metas],
+  const columns = useMemo(
+    () => [
+      { id: "NEW" as const, label: "Нові" },
+      ...SHIFT_KANBAN_STAGES.map((s) => ({ id: s.id as BoardColumnId, label: s.label })),
+    ],
+    [],
   );
 
+  const entriesByOrder = useMemo(() => {
+    const byOrder = new Map<string, WorkEntryRow[]>();
+    for (const row of workEntries) {
+      if (!row.orderId) continue;
+      const list = byOrder.get(row.orderId);
+      if (list) list.push(row);
+      else byOrder.set(row.orderId, [row]);
+    }
+    return byOrder;
+  }, [workEntries]);
+
+  const orderColumn = useCallback(
+    (order: BoardOrder): BoardColumnId => {
+      if (order.boardStage && SHIFT_KANBAN_COLUMN_IDS.includes(order.boardStage as BoardColumnId)) {
+        return order.boardStage as BoardColumnId;
+      }
+      const rows = entriesByOrder.get(order.id) ?? [];
+      const inWork = rows.find((x) => x.endedAt == null);
+      if (inWork?.phase) {
+        const normalized = normalizePhase(inWork.phase);
+        if (SHIFT_KANBAN_COLUMN_IDS.includes(normalized as BoardColumnId)) {
+          return normalized as BoardColumnId;
+        }
+      }
+      if (order.status === ORDER_DONE) return "PREP";
+      const done = completedStagesFromEntries(rows.map((x) => ({ phase: x.phase, endedAt: x.endedAt })));
+      const next = nextOpenStageId(done);
+      if (next && SHIFT_KANBAN_COLUMN_IDS.includes(next as BoardColumnId)) {
+        return next as BoardColumnId;
+      }
+      return "NEW";
+    },
+    [entriesByOrder],
+  );
+
+  const ordersByColumn = useMemo(() => {
+    const map: Record<BoardColumnId, BoardOrder[]> = {
+      NEW: [],
+      PACK: [],
+      CLEAN: [],
+      PAINT: [],
+      PREP: [],
+    };
+    for (const order of orders) {
+      map[orderColumn(order)].push(order);
+    }
+    for (const key of Object.keys(map) as BoardColumnId[]) {
+      map[key].sort((a, b) => a.number.localeCompare(b.number, "uk", { numeric: true }));
+    }
+    return map;
+  }, [orders, orderColumn]);
+
   const showWorkshopOverview = canManageOrders(profile?.role);
+
+  async function onDragEnd(event: DragEndEvent) {
+    const orderId = String(event.active.id ?? "");
+    const target = event.over?.id ? String(event.over.id) : "";
+    if (!orderId || !target) return;
+    const targetColumn = columns.find((x) => x.id === target)?.id;
+    if (!targetColumn) return;
+    const order = orders.find((x) => x.id === orderId);
+    if (!order) return;
+    if (orderColumn(order) === targetColumn) return;
+
+    try {
+      setMoveError(null);
+      setMovingOrderId(orderId);
+      const res = await moveOrderBoardStageFirestore({ orderId, targetColumn });
+      if ("error" in res) {
+        setMoveError(res.error);
+        return;
+      }
+      await load();
+    } catch {
+      setMoveError("Не вдалося перемістити картку.");
+    } finally {
+      setMovingOrderId(null);
+    }
+  }
 
   if (!user) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="relative left-1/2 right-1/2 w-screen max-w-none -translate-x-1/2 space-y-6 px-4 sm:px-6 lg:px-8 2xl:px-10">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Зміна</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          У списку нижче лише замовлення, по яких зараз ніхто не веде зміну — якщо колега вже «на замовленні», воно
-          зникає з вибору. Етапи: комплектування та зварювання → фарбування → підготовка → упаковка → відправлення. Після останнього
-          етапу замовлення автоматично в архіві. Після роботи натисніть «Завершити зміну» у шапці.
+          Kanban-дошка відображає всі замовлення по етапах. Перетягніть картку у потрібну колонку, щоб оновити етап.
           {showWorkshopOverview ? (
             <>
               {" "}
@@ -234,7 +310,34 @@ export function ShiftPageClient() {
             {loadError}
           </p>
         ) : null}
+        {moveError ? (
+          <p className="mt-3 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
+            {moveError}
+          </p>
+        ) : null}
       </div>
+
+      {!loadError ? (
+        <DndContext sensors={sensors} onDragEnd={(event) => void onDragEnd(event)}>
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold text-foreground">Kanban замовлень</h2>
+            <div className="overflow-x-auto pb-2">
+              <div className="flex min-w-max items-start gap-4">
+              {columns.map((column) => (
+                <div key={column.id} className="w-72 min-w-72 flex-none lg:w-76 lg:min-w-76">
+                  <KanbanColumn
+                    id={column.id}
+                    title={column.label}
+                    orders={ordersByColumn[column.id]}
+                    movingOrderId={movingOrderId}
+                  />
+                </div>
+              ))}
+              </div>
+            </div>
+          </section>
+        </DndContext>
+      ) : null}
 
       {!loadError && showWorkshopOverview ? (
         <>
@@ -305,36 +408,74 @@ export function ShiftPageClient() {
           </section>
         </>
       ) : null}
-
-      {hasOpenShift ? (
-        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted">
-          Завершіть поточну зміну в шапці сторінки, щоб почати новий етап.
-        </div>
-      ) : metas.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card p-6 text-sm text-muted">
-          Немає замовлень у виробництві. Адміністратор має додати замовлення в керуванні замовленнями — тоді вони
-          з’являться тут.
-        </div>
-      ) : pickableOrders.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted">
-          <p className="text-foreground">
-            Зараз усі замовлення у виробництві вже взяті в роботу колегами, або по них немає наступного етапу.
-          </p>
-          {showWorkshopOverview ? (
-            <p className="mt-2">
-              Перегляньте блоки вище: видно, хто на якому замовленні. Коли колега натисне «Завершити зміну», замовлення
-              знову з’явиться у списку вибору (якщо наступний етап ще не завершений).
-            </p>
-          ) : (
-            <p className="mt-2">
-              Дочекайтесь, поки колега завершить зміну в шапці — тоді замовлення знову з’явиться у списку (якщо наступний
-              етап ще не завершений).
-            </p>
-          )}
-        </div>
-      ) : (
-        <ShiftWorkForm orders={pickableOrders} onDone={() => void load()} />
-      )}
     </div>
+  );
+}
+
+function KanbanColumn({
+  id,
+  title,
+  orders,
+  movingOrderId,
+}: {
+  id: BoardColumnId;
+  title: string;
+  orders: BoardOrder[];
+  movingOrderId: string | null;
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`min-h-[220px] rounded-xl border p-3 transition ${
+        isOver ? "border-accent bg-accent-soft/40" : "border-border bg-card"
+      }`}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{orders.length}</span>
+      </div>
+      <div className="space-y-2">
+        {orders.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border px-2 py-3 text-center text-xs text-muted">
+            Порожньо
+          </p>
+        ) : (
+          orders.map((order) => (
+            <KanbanCard key={order.id} order={order} isMoving={movingOrderId === order.id} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KanbanCard({
+  order,
+  isMoving,
+}: {
+  order: BoardOrder;
+  isMoving: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: order.id,
+  });
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
+  return (
+    <article
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`cursor-grab rounded-lg border border-border bg-card px-3 py-2 shadow-sm active:cursor-grabbing ${
+        isDragging || isMoving ? "opacity-60" : ""
+      }`}
+    >
+      <p className="text-sm font-semibold text-foreground tabular-nums">{order.number}</p>
+      {order.title ? <p className="mt-1 text-xs text-muted">{order.title}</p> : null}
+      {order.description ? <p className="mt-2 line-clamp-3 text-xs text-foreground/90">{order.description}</p> : null}
+    </article>
   );
 }

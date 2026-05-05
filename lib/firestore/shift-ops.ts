@@ -1,5 +1,7 @@
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase/client";
+import { isFirestorePermissionDenied, UK_FIRESTORE_RULES_HINT } from "@/lib/firebase/firestore-errors";
 import type { WorkActionResult } from "@/lib/work-constants";
+import { SHIFT_KANBAN_COLUMN_IDS } from "@/lib/kanban-stages";
 import { ORDER_DONE, ORDER_IN_PRODUCTION } from "@/lib/order-status";
 import {
   completedStagesFromEntries,
@@ -9,7 +11,9 @@ import {
 } from "@/lib/pipeline";
 import { COL } from "@/lib/firestore/collections";
 import {
+  Timestamp,
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -23,6 +27,9 @@ import { z } from "zod";
 
 const stageIdEnum = z.enum(
   PIPELINE_STAGES.map((s) => s.id) as [string, ...string[]],
+);
+const boardColumnEnum = z.enum(
+  SHIFT_KANBAN_COLUMN_IDS as [string, ...string[]],
 );
 
 export async function startStageFirestore(input: {
@@ -163,4 +170,50 @@ export async function finishActiveWorkEntryFirestore(entryId: string): Promise<v
     status: ORDER_DONE,
     completedAt: serverTimestamp(),
   });
+}
+
+export async function moveOrderBoardStageFirestore(input: {
+  orderId: string;
+  targetColumn: string;
+}): Promise<WorkActionResult> {
+  const auth = getFirebaseAuth();
+  const userId = auth.currentUser?.uid;
+  if (!userId) return { error: "Увійдіть у систему." };
+  const actorName = auth.currentUser?.displayName?.trim() || auth.currentUser?.email?.trim() || null;
+
+  const parsed = boardColumnEnum.safeParse(input.targetColumn);
+  if (!parsed.success) return { error: "Некоректна колонка kanban." };
+  const targetColumn = parsed.data;
+
+  const db = getFirebaseDb();
+  const orderRef = doc(db, COL.orders, input.orderId);
+  const orderSnap = await getDoc(orderRef);
+  if (!orderSnap.exists()) return { error: "Замовлення не знайдено." };
+  const orderData = orderSnap.data() as { boardStage?: string | null };
+  const currentBoardStage = typeof orderData.boardStage === "string" ? orderData.boardStage : null;
+  const fromStage = boardColumnEnum.safeParse(currentBoardStage ?? "NEW");
+  if (!fromStage.success) return { error: "Поточний етап замовлення має некоректне значення." };
+  if (fromStage.data === targetColumn) return { ok: true };
+
+  try {
+    await updateDoc(orderRef, {
+      status: ORDER_IN_PRODUCTION,
+      boardStage: targetColumn === "NEW" ? null : targetColumn,
+      completedAt: null,
+      updatedAt: serverTimestamp(),
+      stageMoveHistory: arrayUnion({
+        actorUserId: userId,
+        actorName,
+        fromStage: fromStage.data,
+        toStage: targetColumn,
+        movedAt: Timestamp.now(),
+      }),
+    });
+    return { ok: true };
+  } catch (e) {
+    if (isFirestorePermissionDenied(e)) {
+      return { error: UK_FIRESTORE_RULES_HINT };
+    }
+    return { error: "Не вдалося перемістити картку." };
+  }
 }

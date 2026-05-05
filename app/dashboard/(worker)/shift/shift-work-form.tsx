@@ -1,12 +1,12 @@
 "use client";
 
 import { startStageFirestore } from "@/lib/firestore/shift-ops";
-import { PIPELINE_STAGES } from "@/lib/pipeline";
+import { PIPELINE_LAST_STAGE_ID, PIPELINE_STAGES, stageLabel } from "@/lib/pipeline";
 import type { WorkActionResult } from "@/lib/work-constants";
 import type { OrderSelectOption } from "@/lib/order-option";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 type Row = { color: string; amount: string };
 
@@ -55,9 +55,14 @@ export function ShiftWorkForm({
     return counts;
   }, [orders]);
 
+  const effectiveOrderId = useMemo(() => {
+    if (filteredOrders.some((o) => o.id === orderId)) return orderId;
+    return filteredOrders[0]?.id ?? "";
+  }, [filteredOrders, orderId]);
+
   const selected = useMemo(
-    () => filteredOrders.find((o) => o.id === orderId) ?? null,
-    [filteredOrders, orderId],
+    () => filteredOrders.find((o) => o.id === effectiveOrderId) ?? null,
+    [filteredOrders, effectiveOrderId],
   );
 
   const isPaint = selected?.nextStageId === "PAINT";
@@ -83,7 +88,7 @@ export function ShiftWorkForm({
     }
     startTransition(async () => {
       const res: WorkActionResult = await startStageFirestore({
-        orderId,
+        orderId: effectiveOrderId,
         stageId: selected.nextStageId!,
         notes,
         colors: rows,
@@ -100,16 +105,6 @@ export function ShiftWorkForm({
       router.refresh();
     });
   }
-
-  useEffect(() => {
-    if (filteredOrders.length === 0) {
-      setOrderId("");
-      return;
-    }
-    if (!filteredOrders.some((o) => o.id === orderId)) {
-      setOrderId(filteredOrders[0].id);
-    }
-  }, [filteredOrders, orderId]);
 
   if (orders.length === 0) {
     return null;
@@ -154,7 +149,7 @@ export function ShiftWorkForm({
         </p>
         <select
           id="orderId"
-          value={orderId}
+          value={effectiveOrderId}
           onChange={(e) => setOrderId(e.target.value)}
           required
           disabled={filteredOrders.length === 0}
@@ -184,10 +179,10 @@ export function ShiftWorkForm({
             </>
           ) : null}
         </p>
-        {orderId ? (
+        {effectiveOrderId ? (
           <p className="mt-2 text-sm">
             <Link
-              href={`/dashboard/orders/${orderId}`}
+              href={`/dashboard/orders/${effectiveOrderId}`}
               className="font-medium text-accent underline-offset-2 hover:underline"
             >
               Деталі замовлення та облік матеріалів →
@@ -200,8 +195,8 @@ export function ShiftWorkForm({
         <div className="rounded-lg border border-border bg-accent-soft/40 px-3 py-2 text-sm">
           {selected.allDone && !selected.blocked ? (
             <p className="text-foreground">
-              Усі етапи пройдені, замовлення в архіві. Якщо щойно завершили «Відправлення», оновіть сторінку — запис
-              зникне зі списку зміни.
+              Усі етапи пройдені, замовлення в архіві. Якщо щойно завершили «{stageLabel(PIPELINE_LAST_STAGE_ID)}»,
+              оновіть сторінку — запис зникне зі списку зміни.
             </p>
           ) : selected.nextLabel ? (
             <p className="text-foreground">
